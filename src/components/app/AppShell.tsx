@@ -1,6 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { FolderKanban, LayoutDashboard, LogOut, Timer, Users } from "lucide-react";
+import {
+  FileText,
+  FolderKanban,
+  LayoutDashboard,
+  LogOut,
+  Receipt,
+  Timer,
+  Users,
+} from "lucide-react";
 import type { ProfileRole } from "@/types/database";
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
@@ -11,7 +19,17 @@ function navForRole(role: ProfileRole): readonly NavItem[] {
     { href: "/dashboard/time", label: "Time", icon: Timer },
   ];
 
-  if (role === "employer" || role === "super_admin") {
+  if (role === "employer") {
+    return [
+      ...base,
+      { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+      { href: "/employer/quotes", label: "Offertes", icon: FileText },
+      { href: "/employer/invoices", label: "Facturen", icon: Receipt },
+      { href: "/dashboard/team", label: "Team", icon: Users },
+    ];
+  }
+
+  if (role === "super_admin") {
     return [
       ...base,
       { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },

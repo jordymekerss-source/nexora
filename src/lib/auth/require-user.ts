@@ -77,3 +77,19 @@ export async function requireDashboardSession(): Promise<DashboardSession> {
 
   return { session: { ...session, profile }, tenantId: profile.tenant_id };
 }
+
+export async function requireEmployerSession(): Promise<{
+  session: AuthenticatedSession & { profile: ProfileRow };
+  tenantId: string;
+}> {
+  const ctx = await requireDashboardSession();
+
+  if (ctx.session.profile.role !== "employer" || ctx.tenantId === null) {
+    redirect("/dashboard");
+  }
+
+  return {
+    session: ctx.session,
+    tenantId: ctx.tenantId,
+  };
+}

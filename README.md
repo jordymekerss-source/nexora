@@ -12,11 +12,13 @@ Multi-tenant ERP for field services, construction, and installation businesses.
 - Time clock / entries with employee self-edit of pending rows and employer approval
 - Project photo uploads to private Storage with signed URLs
 - Employer team invites via Supabase Auth Admin API
+- Quotes (Offertes) with line items, VAT totals, and convert-to-project
+- Invoices (Facturatie) from approved hours, status workflow, and print-ready view
 
 ## Setup
 
 1. Create a Supabase project.
-2. Run the migration in `supabase/migrations/20251106190000_initial_schema.sql` (SQL Editor or CLI).
+2. Run migrations in order from `supabase/migrations/` (SQL Editor or CLI), including Module 2 quotes/invoices.
 3. Copy `.env.example` → `.env.local` and fill in keys.
 4. In Supabase Auth → URL configuration, allow `NEXT_PUBLIC_SITE_URL` and `/auth/callback`.
 5. Install and run:
