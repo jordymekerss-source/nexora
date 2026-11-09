@@ -16,16 +16,17 @@
 ## Last completed
 
 - Master audit + full docs set
-- P0 demo gate + health endpoint
-- Vitest (10 tests)
-- Foundation SQL migration
-- Demo break start/stop + audit events on employee mobile
+- P0 demo gate + health endpoint + Vitest
+- Foundation + **security hardening** SQL migrations
+- Auth callback open-redirect fix
+- Demo break start/stop
+- Incorporated deep audit subagent findings into docs/fixes
 
 ## Next actions (ordered)
 
-1. Live Supabase wiring for ops + breaks
-2. Employer append-only time correction UI
-3. Module configs employer UI
+1. Apply `20251109240000_*` and `20251109250000_*` on Supabase
+2. Live Supabase wiring for ops + breaks
+3. Employer append-only time correction UI
 4. Super Admin scaffold
 5. Next.js security upgrade decision
 6. Consolidate `/dashboard/projects` vs `/employer/projects`

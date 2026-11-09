@@ -125,16 +125,21 @@ Legend: **PASS** requires evidence of UI+backend+storage+auth+tests. None meet f
 
 | ID | Sev | Finding | Status |
 |---|---|---|---|
-| SEC-P0-001 | Critical | `isDemoMode()` auto-enables when Supabase env missing — misconfigured “prod” becomes unauthenticated demo | FAIL |
-| SEC-P0-002 | Critical | Demo session from cookie `nexora_demo_persona` — any visitor can assume employer/employee | FAIL for prod (acceptable only if demo hard-gated) |
-| SEC-P0-003 | Critical | Next.js 14.2.35 known critical RCE/DoS advisories per `npm audit` | FAIL |
-| SEC-P0-004 | High | No automated tenant-isolation tests; RLS **NOT TESTED** live | NOT TESTED |
-| SEC-P0-005 | High | Ops/CRM demo write path shares one JSON file on disk — no per-tenant isolation beyond single demo tenant | FAIL for multi-tenant claims |
+| SEC-P0-001 | Critical | Demo auto-enable on missing Supabase env | **FIXED** — explicit `NEXT_PUBLIC_DEMO_MODE=true` only + prod gate |
+| SEC-P0-002 | Critical | Demo persona cookie auth | Mitigated for prod (ALLOW_DEMO_IN_PRODUCTION); still intentional on demo host |
+| SEC-P0-003 | Critical | Next.js 14.2.35 advisories | FAIL — upgrade decision pending |
+| SEC-P0-004 | Critical | Signup metadata → `super_admin` / arbitrary `tenant_id` | **FIXED** in `20251109250000_security_hardening.sql` (invite-only tenant attach) |
+| SEC-P0-005 | High | Auth callback open redirect via `?next=` | **FIXED** — `safeInternalPath` |
+| SEC-P0-006 | High | Employee could update approved time entries | **FIXED** — RLS USING requires `pending` |
+| SEC-P0-007 | High | Employer profile update could escalate roles | **FIXED** — employers may only update `employee` peers |
+| SEC-P0-008 | High | Missing tenant FK integrity on ops tables | **FIXED** — triggers added |
+| SEC-P0-009 | High | No automated tenant-isolation tests; RLS **NOT TESTED** live | NOT TESTED |
+| SEC-P0-010 | High | Demo shared JSON store | Acceptable for single-tenant demo only |
 | SEC-P1-001 | High | Middleware only refreshes session; **no route ACL** | PARTIAL |
-| SEC-P1-002 | High | Service role invite path; no rate limiting on auth/actions | MISSING |
-| SEC-P1-003 | Medium | Work-order signatures stored as data URLs in demo JSON (no virus scan, size limits weak) | PARTIAL |
-| SEC-P1-004 | Medium | No MFA, support-access workflow, audit_events table | MISSING |
-| SEC-P1-005 | Medium | Financial amounts via float rounding | FAIL vs exact money requirement |
+| SEC-P1-002 | High | No rate limiting on auth/actions | MISSING |
+| SEC-P1-003 | Medium | Work-order signatures as data URLs in demo JSON | PARTIAL |
+| SEC-P1-004 | Medium | MFA / support-access workflow incomplete | MISSING (audit_events table added) |
+| SEC-P1-005 | Medium | Financial amounts via float rounding | FAIL — cents helper added, billing not migrated |
 
 ### 5.2 What is good
 

@@ -21,20 +21,21 @@
 - Full audit + requirements matrix + master docs
 - P0: explicit demo opt-in + production refuse unless `ALLOW_DEMO_IN_PRODUCTION`
 - `/api/health`
-- Vitest: 10 tests green (money-cents, demo gate, time calc)
-- Migration `20251109240000_foundation_audit_time.sql` (audit/breaks/corrections/modules)
-- Employee real break start/stop (demo) with audit events
+- Vitest unit tests (money-cents, demo gate, time calc, safe redirect)
+- Migration `20251109240000_foundation_audit_time.sql`
+- Migration `20251109250000_security_hardening.sql` (signup lock, RLS tighten, tenant triggers)
+- Auth callback open-redirect fix
+- Employee real break start/stop (demo)
 
-## Retained prior work
+## Follow-up from deep security/DB/feature audits
 
-- CRM/quotes/invoices/planning demo
-- Ops: assignments, clock-in, fleet, tools, HR, work-order signature
+Findings from [Audit auth security tenancy](bc-3cae540c-0247-5a9b-8ac5-a86390e5ce41), [Audit features vs routes](bc-4b02457a-7735-56db-b4a3-9998f81373e1), and [Audit database schema RLS](bc-1035d86c-24fc-5128-aae2-6b815e1d823d) incorporated into docs + P0 SQL/app fixes above.
 
 ## Next
 
-1. Wire ops + breaks to live Supabase
-2. Employer time correction UI (append-only)
-3. Module config UI
+1. Apply new SQL migrations on the real Supabase project
+2. Wire ops + breaks to live Supabase
+3. Employer time correction UI
 4. Super Admin scaffold
 5. Decide Next.js major upgrade
 
@@ -47,7 +48,7 @@
 ## Tests run
 
 - `tsc --noEmit` PASS
-- `npm test` PASS (10)
+- `npm test` (incl. redirect tests)
 - `npm run build` PASS
 - `npm audit` FAIL (known Next advisories)
 

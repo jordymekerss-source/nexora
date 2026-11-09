@@ -48,21 +48,23 @@ Related: `docs/AUDIT_REPORT.md`
 | TEN-003 | Cross-tenant access impossible | P0 | NOT TESTED | No isolation suite | Write tests + live DB |
 | TEN-004 | Tenant-bound files | P0 | PARTIAL | Photo storage policies | Extend to all blobs |
 | TEN-005 | Tenant-bound jobs/exports | P1 | MISSING | — | Build |
-| SEC-001 | Authentication | P0 | PARTIAL | Supabase Auth; demo bypass | Gate demo |
-| SEC-002 | Session management | P0 | PARTIAL | Cookie SSR | Harden |
+| SEC-001 | Authentication | P0 | PARTIAL | Supabase Auth; demo gated | Keep hardening |
+| SEC-002 | Session management | P0 | PARTIAL | Cookie SSR; callback redirect fixed | Middleware ACL next |
 | SEC-003 | Password storage | P0 | PARTIAL | Delegated to Supabase | Verify config |
 | SEC-004 | MFA | P2 | MISSING | — | Optional Phase 8 |
 | SEC-005 | Granular permissions | P1 | MISSING | Role enum only | Phase 2 |
-| SEC-006 | CSRF / XSS / SQLi / SSRF protections | P0 | PARTIAL | Framework defaults; not audited deeply | Tests + headers |
+| SEC-006 | CSRF / XSS / SQLi / SSRF protections | P0 | PARTIAL | Open redirect fixed; deeper tests pending | Headers + tests |
 | SEC-007 | Rate limiting | P1 | MISSING | — | Add |
 | SEC-008 | Upload security | P1 | PARTIAL | Storage policies; signature data URLs weak | Harden |
 | SEC-009 | Secrets management | P0 | PARTIAL | `.env.example`; no vault | Prod secrets process |
 | SEC-010 | HTTPS | P0 | FAIL | Live HTTP :3000 | TLS via proxy |
-| SEC-011 | Audit logging | P0 | MISSING | — | `audit_events` |
+| SEC-011 | Audit logging | P0 | PARTIAL | `audit_events` table + demo break events | Wire live writes |
 | SEC-012 | Support access temporary + logged | P1 | MISSING | — | Phase 2 |
 | SEC-013 | No hardcoded secrets | P0 | PARTIAL | Demo placeholders in public-env | Review |
 | SEC-014 | Critical vuln remediation | P0 | FAIL | `npm audit` critical on Next | Upgrade plan |
-| SEC-015 | Demo mode cannot activate accidentally in prod | P0 | FAIL | Auto-fallback if env missing | **Fix P0** |
+| SEC-015 | Demo mode cannot activate accidentally in prod | P0 | PASS | Explicit opt-in + prod allow flag + tests | Keep |
+| SEC-016 | Signup cannot self-assign super_admin | P0 | PASS | Hardened trigger (migration) | Apply on Supabase |
+| SEC-017 | Signup cannot join arbitrary tenant | P0 | PASS | Invite-only tenant attach | Apply on Supabase |
 
 ---
 
