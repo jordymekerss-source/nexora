@@ -95,10 +95,10 @@ export async function requireDashboardSession(): Promise<DashboardSession> {
   }
 
   if (profile.tenant_id === null) {
-    if (profile.role === "employer") {
-      redirect("/onboarding/create-organization");
-    }
-    redirect("/onboarding/need-tenant");
+    // Public signup always creates employee + null tenant. Employer elevation happens
+    // only in create-organization (service role). Invited employees receive tenant_id
+    // from tenant_invites and never hit this branch.
+    redirect("/onboarding/create-organization");
   }
 
   return { session: { ...session, profile }, tenantId: profile.tenant_id };

@@ -229,6 +229,16 @@ export type ModuleConfigRow = {
   updated_at: string;
 };
 
+export type TenantInviteRow = {
+  id: string;
+  tenant_id: string;
+  email: string;
+  full_name: string;
+  invited_by: string;
+  consumed_at: string | null;
+  created_at: string;
+};
+
 type Rel = {
   foreignKeyName: string;
   columns: string[];
@@ -702,9 +712,49 @@ export type Database = {
         };
         Relationships: Rel[];
       };
+      tenant_invites: {
+        Row: TenantInviteRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          email: string;
+          full_name: string;
+          invited_by: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          email?: string;
+          full_name?: string;
+          invited_by?: string;
+          consumed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      next_document_number: {
+        Args: { p_tenant_id: string; p_prefix: string; p_year?: number };
+        Returns: string;
+      };
+      create_quote_with_items: {
+        Args: {
+          p_client_id: string;
+          p_status: string;
+          p_valid_until: string | null;
+          p_items: Json;
+        };
+        Returns: string;
+      };
+      convert_quote_to_project_invoice: {
+        Args: { p_quote_id: string };
+        Returns: Array<{ project_id: string; invoice_id: string }>;
+      };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

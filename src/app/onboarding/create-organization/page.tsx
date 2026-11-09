@@ -7,17 +7,21 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { isNonEmptyString } from "@/lib/validation";
 
+/**
+ * Organization creation is the only public path that elevates a null-tenant
+ * user to employer. Privilege never comes from signup metadata.
+ */
 export default async function CreateOrganizationPage() {
   const session = await requireSession();
   if (session.profile === null) {
     redirect("/onboarding/bootstrap-profile");
   }
 
-  if (session.profile.role !== "employer") {
+  if (session.profile.tenant_id !== null) {
     redirect("/dashboard");
   }
 
-  if (session.profile.tenant_id !== null) {
+  if (session.profile.role === "super_admin") {
     redirect("/dashboard");
   }
 
@@ -26,10 +30,13 @@ export default async function CreateOrganizationPage() {
 
     const { requireSession: loadSession } = await import("@/lib/auth/require-user");
     const innerSession = await loadSession();
-    if (innerSession.profile === null || innerSession.profile.role !== "employer") {
-      redirect("/dashboard");
+    if (innerSession.profile === null) {
+      redirect("/onboarding/bootstrap-profile");
     }
     if (innerSession.profile.tenant_id !== null) {
+      redirect("/dashboard");
+    }
+    if (innerSession.profile.role === "super_admin") {
       redirect("/dashboard");
     }
 
@@ -53,7 +60,8 @@ export default async function CreateOrganizationPage() {
     const { error: profileError } = await admin
       .from("profiles")
       .update({ tenant_id: tenant.id, role: "employer" })
-      .eq("id", innerSession.userId);
+      .eq("id", innerSession.userId)
+      .is("tenant_id", null);
 
     if (profileError !== null) {
       await admin.from("tenants").delete().eq("id", tenant.id);
@@ -66,22 +74,23 @@ export default async function CreateOrganizationPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
       <Card>
-        <h1 className="text-xl font-semibold text-zinc-50">Create your organization</h1>
+        <h1 className="text-xl font-semibold text-zinc-50">Organisatie aanmaken</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          This creates your tenant in NEXORA and attaches your employer account to it.
+          Dit maakt je bedrijfstenant aan en wijst je veilig de werkgeverrol toe. Dit is geen
+          metadata van de registratiepagina.
         </p>
 
         <form action={createOrganization} className="mt-6 space-y-4">
-          <Input name="organization_name" label="Organization name" required />
+          <Input name="organization_name" label="Organisatienaam" required />
           <Button type="submit" className="w-full">
-            Create organization
+            Organisatie aanmaken
           </Button>
         </form>
 
         <div className="mt-6 text-sm text-zinc-500">
-          Need to sign out?{" "}
+          Uitloggen?{" "}
           <Link className="text-accent hover:text-emerald-300" href="/login">
-            Back to sign in
+            Terug naar inloggen
           </Link>
         </div>
       </Card>

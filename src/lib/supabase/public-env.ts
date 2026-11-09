@@ -6,7 +6,9 @@ export function getPublicSupabaseUrl(): string {
   }
   const value = process.env["NEXT_PUBLIC_SUPABASE_URL"];
   if (value === undefined || value.length === 0) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
+    throw new Error(
+      "Live mode refused: NEXT_PUBLIC_SUPABASE_URL is required. Demo JSON storage will not be used as a silent fallback.",
+    );
   }
   return value;
 }
@@ -17,7 +19,9 @@ export function getPublicSupabaseAnonKey(): string {
   }
   const value = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
   if (value === undefined || value.length === 0) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    throw new Error(
+      "Live mode refused: NEXT_PUBLIC_SUPABASE_ANON_KEY is required. Demo JSON storage will not be used as a silent fallback.",
+    );
   }
   return value;
 }

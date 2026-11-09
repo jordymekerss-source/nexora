@@ -332,40 +332,23 @@ export async function createQuoteWithItems(
   }
 
   const typedClient = client as ClientRow;
-  const { data: existing } = await supabase.from("quotes").select("quote_number").eq("tenant_id", tenantId);
-  const quoteNumber = nextQuoteNumber((existing ?? []).map((row) => row.quote_number));
+  const { data: quoteId, error: rpcError } = await supabase.rpc("create_quote_with_items", {
+    p_client_id: typedClient.id,
+    p_status: status,
+    p_valid_until: input.validUntil?.trim() || null,
+    p_items: normalized.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+    })),
+  });
 
-  const { data: quote, error: quoteError } = await supabase
-    .from("quotes")
-    .insert({
-      tenant_id: tenantId,
-      quote_number: quoteNumber,
-      client_id: typedClient.id,
-      client_name: typedClient.company_name,
-      status,
-      subtotal: totals.exclVat,
-      vat_amount: totals.vatAmount,
-      total_amount: totals.inclVat,
-      valid_until: input.validUntil?.trim() || null,
-    })
-    .select("id")
-    .single();
-
-  if (quoteError !== null || quote === null) {
-    throw new Error(quoteError?.message ?? "Failed to create quote.");
-  }
-
-  const { error: itemsError } = await supabase.from("quote_items").insert(
-    normalized.map((item) => ({ quote_id: quote.id, ...item })),
-  );
-
-  if (itemsError !== null) {
-    await supabase.from("quotes").delete().eq("id", quote.id);
-    throw new Error(itemsError.message);
+  if (rpcError !== null || quoteId === null || typeof quoteId !== "string") {
+    throw new Error(rpcError?.message ?? "Failed to create quote atomically.");
   }
 
   revalidateCrmPaths();
-  return { quoteId: quote.id };
+  return { quoteId };
 }
 
 export async function convertQuoteToProjectAndInvoice(
@@ -433,82 +416,28 @@ export async function convertQuoteToProjectAndInvoice(
   }
 
   const supabase = createSupabaseServerClient();
-  const { data: quoteData, error: quoteError } = await supabase
-    .from("quotes")
-    .select("*")
-    .eq("id", quoteId)
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-  if (quoteError !== null || quoteData === null) {
-    throw new Error(quoteError?.message ?? "Quote not found.");
-  }
-  const quote = quoteData as QuoteRow;
-  const { data: itemsData } = await supabase.from("quote_items").select("*").eq("quote_id", quoteId);
-  const items = (itemsData ?? []) as QuoteItemRow[];
-
-  const { data: project, error: projectError } = await supabase
-    .from("projects")
-    .insert({
-      tenant_id: tenantId,
-      title: `${quote.quote_number} — ${quote.client_name}`,
-      client_name: quote.client_name,
-      address: `Offerte ${quote.quote_number}`,
-      status: "active",
-    })
-    .select("id")
-    .single();
-  if (projectError !== null || project === null) {
-    throw new Error(projectError?.message ?? "Failed to create project.");
-  }
-
-  await supabase.from("quotes").update({ status: "accepted" }).eq("id", quoteId);
-
-  const { data: existingInvoices } = await supabase
-    .from("invoices")
-    .select("invoice_number")
-    .eq("tenant_id", tenantId);
-  const invoiceNumber = nextInvoiceNumber(
-    (existingInvoices ?? []).map((row) => row.invoice_number),
+  const { data: converted, error: rpcError } = await supabase.rpc(
+    "convert_quote_to_project_invoice",
+    { p_quote_id: quoteId },
   );
-  const due = new Date();
-  due.setDate(due.getDate() + 30);
 
-  const { data: invoice, error: invoiceError } = await supabase
-    .from("invoices")
-    .insert({
-      tenant_id: tenantId,
-      invoice_number: invoiceNumber,
-      project_id: project.id,
-      quote_id: quote.id,
-      client_id: quote.client_id,
-      client_name: quote.client_name,
-      status: "draft",
-      subtotal: quote.subtotal,
-      vat_amount: quote.vat_amount,
-      total_amount: quote.total_amount,
-      due_date: due.toISOString().slice(0, 10),
-    })
-    .select("id")
-    .single();
-
-  if (invoiceError !== null || invoice === null) {
-    throw new Error(invoiceError?.message ?? "Failed to create invoice.");
+  if (rpcError !== null || converted === null || !Array.isArray(converted) || converted.length === 0) {
+    throw new Error(rpcError?.message ?? "Failed to convert quote atomically.");
   }
 
-  if (items.length > 0) {
-    await supabase.from("invoice_items").insert(
-      items.map((item) => ({
-        invoice_id: invoice.id,
-        description: item.description,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
-      })),
-    );
+  const row = converted[0] as { project_id: string; invoice_id: string };
+  if (!isUuid(row.project_id) || !isUuid(row.invoice_id)) {
+    throw new Error("Invalid conversion result.");
   }
 
-  revalidateCrmPaths([`/employer/invoices/${invoice.id}`, `/dashboard/projects/${project.id}`]);
-  return { projectId: project.id, invoiceId: invoice.id };
+  // tenantId is already authorized via requireEmployerSession + RPC current_tenant_id()
+  void tenantId;
+
+  revalidateCrmPaths([
+    `/employer/invoices/${row.invoice_id}`,
+    `/dashboard/projects/${row.project_id}`,
+  ]);
+  return { projectId: row.project_id, invoiceId: row.invoice_id };
 }
 
 export async function generateInvoiceFromApprovedTimeEntries(
@@ -619,14 +548,20 @@ export async function generateInvoiceFromApprovedTimeEntries(
   }
   const line = lineTotal(hours, rate);
   const totals = computeVatTotals({ exclVat: line, vatPercentage: 21 });
-  const { data: existing } = await supabase.from("invoices").select("invoice_number").eq("tenant_id", tenantId);
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc("next_document_number", {
+    p_tenant_id: tenantId,
+    p_prefix: "FAC",
+  });
+  if (numberError !== null || typeof invoiceNumber !== "string") {
+    throw new Error(numberError?.message ?? "Failed to allocate invoice number.");
+  }
   const due = new Date();
   due.setDate(due.getDate() + 30);
   const { data: invoice, error: invoiceError } = await supabase
     .from("invoices")
     .insert({
       tenant_id: tenantId,
-      invoice_number: nextInvoiceNumber((existing ?? []).map((row) => row.invoice_number)),
+      invoice_number: invoiceNumber,
       project_id: project.id,
       quote_id: null,
       client_id: null,
@@ -642,13 +577,17 @@ export async function generateInvoiceFromApprovedTimeEntries(
   if (invoiceError !== null || invoice === null) {
     throw new Error(invoiceError?.message ?? "Failed to create invoice.");
   }
-  await supabase.from("invoice_items").insert({
+  const { error: itemError } = await supabase.from("invoice_items").insert({
     invoice_id: invoice.id,
     description: `Goedgekeurde uren — ${project.title}`,
     quantity: hours,
     unit_price: rate,
     total_price: line,
   });
+  if (itemError !== null) {
+    await supabase.from("invoices").delete().eq("id", invoice.id).eq("tenant_id", tenantId);
+    throw new Error(itemError.message);
+  }
   revalidateCrmPaths([`/employer/invoices/${invoice.id}`]);
   return { invoiceId: invoice.id };
 }

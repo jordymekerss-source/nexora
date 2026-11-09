@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Critical repair (auth/time/billing)
+
+- Public signup ignores privileged metadata; membership via `tenant_invites` only
+- Employer elevation only through create-organization (service role)
+- Time entry employee updates blocked for approved rows (RLS + trigger)
+- Atomic billing RPCs for quote create/convert; safer invoice numbering
+- Repair/security/tenant isolation test reports
+
 ### Core MVP stabilisation
 
 - Live middleware route protection; fail-closed live env without Supabase

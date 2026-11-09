@@ -27,7 +27,8 @@ export default async function SignupPage() {
       redirect("/signup?error=form");
     }
 
-    // Public self-signup is employer-only. Employees join exclusively via Admin invite.
+    // Do NOT send role/tenant_id in user metadata. Privileges are assigned only by
+    // server-side onboarding (create organization) or tenant_invites consumption.
     const supabase = createSupabaseServerClient();
     const { getSiteUrl } = await import("@/lib/supabase/public-env");
     const origin = getSiteUrl();
@@ -39,7 +40,6 @@ export default async function SignupPage() {
         emailRedirectTo: `${origin}/auth/callback`,
         data: {
           full_name: fullName.trim(),
-          role: "employer",
         },
       },
     });
@@ -60,15 +60,21 @@ export default async function SignupPage() {
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Account aanmaken</h1>
           <p className="mt-2 text-sm text-zinc-400">
-            Publieke registratie is alleen voor werkgevers. Medewerkers ontvangen een
-            uitnodiging van hun bedrijf.
+            Na registratie maak je als werkgever een organisatie aan. Medewerkers worden
+            alleen via een bedrijfsuitnodiging toegevoegd.
           </p>
         </div>
 
         <Card>
           <form action={signUp} className="space-y-4">
             <Input name="full_name" label="Volledige naam" required autoComplete="name" />
-            <Input name="email" type="email" label="Zakelijk e-mailadres" required autoComplete="email" />
+            <Input
+              name="email"
+              type="email"
+              label="Zakelijk e-mailadres"
+              required
+              autoComplete="email"
+            />
             <Input
               name="password"
               type="password"
@@ -78,7 +84,6 @@ export default async function SignupPage() {
               minLength={8}
               hint="Minimaal 8 tekens."
             />
-
             <Button type="submit" className="w-full">
               Account aanmaken
             </Button>
