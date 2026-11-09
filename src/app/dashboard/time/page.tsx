@@ -19,29 +19,79 @@ export default async function TimeEntriesPage() {
   const { isDemoMode } = await import("@/lib/demo/mode");
   if (isDemoMode()) {
     const { readDemoStore, seedDemoStoreIfEmpty } = await import("@/lib/demo/store");
+    const { correctTimeEntryFormAction } = await import("@/app/actions/ops");
+    const { getDemoPersonaFromCookies } = await import("@/lib/demo/persona");
     await seedDemoStoreIfEmpty(false);
     const store = await readDemoStore();
+    const persona = getDemoPersonaFromCookies();
+    const isEmployer = persona === "employer";
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-zinc-50">Time</h1>
+        <h1 className="text-2xl font-semibold text-zinc-50">Uren</h1>
         <p className="text-sm text-zinc-400">
-          Demo-modus toont goedgekeurde uren uit de seed (volledige clock UI vereist Supabase).
+          Demo: medewerker-klok staat op /employee. Werkgevers kunnen hier correcties
+          registreren met behoud van historie.
         </p>
         <Card className="overflow-hidden p-0">
           <div className="divide-y divide-zinc-900">
             {store.timeEntries.map((entry) => (
-              <div key={entry.id} className="px-4 py-3 text-sm text-zinc-300">
+              <div key={entry.id} className="space-y-3 px-4 py-4 text-sm text-zinc-300">
                 <div className="font-medium text-zinc-100">
                   {store.projects.find((project) => project.id === entry.project_id)?.title ??
                     entry.project_id}
                 </div>
-                <div className="mt-1 text-zinc-500">
-                  {entry.status} · break {entry.break_minutes}m
+                <div className="text-zinc-500">
+                  {entry.status} · pauze {entry.break_minutes}m ·{" "}
+                  {formatDateTime(entry.clock_in)}
+                  {entry.clock_out !== null ? ` → ${formatDateTime(entry.clock_out)}` : " (open)"}
                 </div>
+                {isEmployer ? (
+                  <form action={correctTimeEntryFormAction} className="grid gap-2 md:grid-cols-2">
+                    <input type="hidden" name="entry_id" value={entry.id} />
+                    <Input
+                      name="clock_in"
+                      label="Nieuwe start"
+                      type="datetime-local"
+                      defaultValue={formatForDatetimeLocal(entry.clock_in)}
+                      required
+                    />
+                    <Input
+                      name="clock_out"
+                      label="Nieuwe eindtijd"
+                      type="datetime-local"
+                      defaultValue={
+                        entry.clock_out !== null ? formatForDatetimeLocal(entry.clock_out) : ""
+                      }
+                    />
+                    <Input
+                      name="break_minutes"
+                      label="Pauze (min)"
+                      type="number"
+                      defaultValue={String(entry.break_minutes)}
+                      required
+                    />
+                    <Input name="reason" label="Reden correctie" required placeholder="Correctie..." />
+                    <div className="md:col-span-2">
+                      <Button type="submit">Correctie opslaan</Button>
+                    </div>
+                  </form>
+                ) : null}
               </div>
             ))}
           </div>
         </Card>
+        {store.timeEntryCorrections.length > 0 ? (
+          <Card>
+            <h2 className="text-lg font-semibold text-zinc-100">Correctiehistorie</h2>
+            <div className="mt-3 divide-y divide-zinc-900 text-sm">
+              {store.timeEntryCorrections.slice(0, 10).map((correction) => (
+                <div key={correction.id} className="py-2 text-zinc-400">
+                  {formatDateTime(correction.created_at)} · {correction.reason}
+                </div>
+              ))}
+            </div>
+          </Card>
+        ) : null}
       </div>
     );
   }

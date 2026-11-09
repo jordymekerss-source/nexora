@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireEmployerSession } from "@/lib/auth/require-user";
 import { nextInvoiceNumber, nextQuoteNumber } from "@/lib/billing-numbers";
+import { assertModuleEnabled } from "@/lib/entitlements/check";
 import { isDemoMode } from "@/lib/demo/mode";
 import {
   getDemoClientHistory,
@@ -145,6 +146,7 @@ export async function seedDemoDataFormAction(formData: FormData): Promise<void> 
 
 export async function createClient(input: CreateClientInput): Promise<{ clientId: string }> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "crm");
 
   if (!isNonEmptyString(input.companyName) || !isNonEmptyString(input.email) || !isNonEmptyString(input.address)) {
     throw new Error("Company name, email and address are required.");
@@ -256,6 +258,7 @@ export async function createQuoteWithItems(
   input: CreateQuoteWithItemsInput,
 ): Promise<{ quoteId: string }> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "billing");
 
   if (!isUuid(input.clientId) || !Array.isArray(input.items) || input.items.length === 0) {
     throw new Error("Client and at least one line item are required.");
@@ -513,6 +516,7 @@ export async function generateInvoiceFromApprovedTimeEntries(
   hourlyRate: number,
 ): Promise<{ invoiceId: string }> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "billing");
   if (!isUuid(projectId)) {
     throw new Error("Invalid project id.");
   }
@@ -691,6 +695,7 @@ export async function assignProjectSchedule(input: {
   notes?: string | null;
 }): Promise<{ scheduleId: string }> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "planning");
   if (!isUuid(input.projectId) || !isUuid(input.assignedUserId) || !isNonEmptyString(input.scheduledDate)) {
     throw new Error("Project, employee and date are required.");
   }

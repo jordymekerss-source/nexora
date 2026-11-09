@@ -74,8 +74,8 @@ Related: `docs/AUDIT_REPORT.md`
 |---|---|---|---|---|---|
 | ACC-001 | Super Admin console | P1 | MISSING | Role exists in schema only | Phase 2 |
 | ACC-002 | Company admin manages org | P1 | PARTIAL | Employer role | Expand |
-| ACC-003 | Onboarding module selection | P1 | MISSING | — | Phase 2 |
-| ACC-004 | Activate/deactivate modules | P1 | MISSING | — | `module_configs` |
+| ACC-003 | Onboarding module selection | P1 | MISSING | — | Phase 2 UI |
+| ACC-004 | Activate/deactivate modules | P1 | PARTIAL | `module_configs` + `assertModuleEnabled` | Super Admin UI |
 | ORG-001 | Interactive org tree | P1 | MISSING | — | Phase 2 |
 | ORG-002 | Teams / departments | P1 | MISSING | Team page = invite list | Build |
 | ORG-003 | Drag-drop / search / history | P2 | MISSING | — | Phase 2 |
@@ -135,7 +135,7 @@ Related: `docs/AUDIT_REPORT.md`
 | TIME-003 | Travel time | P1 | MISSING | — | Build |
 | TIME-004 | Overtime rules configurable | P1 | MISSING | — | CAO config |
 | TIME-005 | Approvals | P1 | PARTIAL | pending/approved | Keep expand |
-| TIME-006 | Corrections append-only | P0 | MISSING | Mutable rows | Corrections table |
+| TIME-006 | Corrections append-only | P0 | PARTIAL | Demo correction ledger + SQL table | Live wire |
 | TIME-007 | Retain originals | P0 | MISSING | — | Audit trail |
 | TIME-008 | Exports | P1 | MISSING | — | Build |
 | TIME-009 | Offline clock | P0 | MISSING | No PWA | Phase 7 |

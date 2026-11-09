@@ -2,11 +2,32 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database";
 
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/employer",
+  "/employee",
+  "/onboarding",
+] as const;
+
+function isProtectedPath(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const demoMode = process.env["NEXT_PUBLIC_DEMO_MODE"] === "true";
+
+  // Demo deployments use cookie persona auth enforced in server layouts/actions.
+  if (demoMode) {
+    return NextResponse.next({
+      request: { headers: request.headers },
+    });
+  }
+
   let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
+    request: { headers: request.headers },
   });
 
   const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"];
@@ -18,6 +39,11 @@ export async function middleware(request: NextRequest) {
     supabaseAnonKey === undefined ||
     supabaseAnonKey.length === 0
   ) {
+    if (isProtectedPath(pathname)) {
+      const login = new URL("/login", request.url);
+      login.searchParams.set("error", "config");
+      return NextResponse.redirect(login);
+    }
     return response;
   }
 
@@ -27,49 +53,37 @@ export async function middleware(request: NextRequest) {
         return request.cookies.get(name)?.value;
       },
       set(name: string, value: string, options: CookieOptions) {
-        request.cookies.set({
-          name,
-          value,
-          ...options,
-        });
+        request.cookies.set({ name, value, ...options });
         response = NextResponse.next({
-          request: {
-            headers: request.headers,
-          },
+          request: { headers: request.headers },
         });
-        response.cookies.set({
-          name,
-          value,
-          ...options,
-        });
+        response.cookies.set({ name, value, ...options });
       },
       remove(name: string, options: CookieOptions) {
-        request.cookies.set({
-          name,
-          value: "",
-          ...options,
-        });
+        request.cookies.set({ name, value: "", ...options });
         response = NextResponse.next({
-          request: {
-            headers: request.headers,
-          },
+          request: { headers: request.headers },
         });
-        response.cookies.set({
-          name,
-          value: "",
-          ...options,
-        });
+        response.cookies.set({ name, value: "", ...options });
       },
     },
   });
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (isProtectedPath(pathname) && user === null) {
+    const login = new URL("/login", request.url);
+    login.searchParams.set("next", pathname);
+    return NextResponse.redirect(login);
+  }
 
   return response;
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/health|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -1,8 +1,9 @@
 # BUILD_STATUS
 
-**Updated:** 2026-11-09 23:50 Europe/Amsterdam  
-**Branch:** `cursor/nexora-master-audit-5233`  
-**Phase:** 0 done · Phase 1 underway
+**Updated:** 2026-11-09 23:55 Europe/Amsterdam  
+**Branch:** `cursor/nexora-mvp-stabilize-5233`  
+**Phase:** Stabilize Core MVP (security + entitlements + time corrections)  
+**Canonical copy:** also `docs/BUILD_STATUS.md`
 
 ## Current phase
 

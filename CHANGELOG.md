@@ -2,11 +2,20 @@
 
 ## Unreleased
 
+### Core MVP stabilisation
+
+- Live middleware route protection; fail-closed live env without Supabase
+- Employer-only public signup; invite-only employees
+- Server-side module entitlements on key actions
+- Cent-backed VAT/line money math; document sequence SQL helper
+- Employer time corrections with append-only history (demo)
+- Storage employee SELECT tightened; security audit docs refreshed
+
 ### Audit & foundation
 
-- Added master audit report and requirements traceability matrix
-- Added BUILD_STATUS, SESSION_HANDOFF, KNOWN_ISSUES, ROADMAP, architecture/security docs
-- Started P0 demo-mode production hardening and test harness
+- Master audit + requirements matrix
+- Demo-mode production hardening and Vitest harness
+- Foundation + security hardening migrations
 
 ## 2026-11-09 — Ops modules (prior)
 

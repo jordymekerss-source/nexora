@@ -1,24 +1,31 @@
+import { fromCents, toCents, vatCents } from "@/lib/money-cents";
+
 const EUR = new Intl.NumberFormat("nl-NL", {
   style: "currency",
   currency: "EUR",
 });
 
+/** Round via integer eurocents to avoid float drift on VAT/line math. */
 export function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return fromCents(toCents(value));
 }
 
 export function lineTotal(quantity: number, unitPrice: number): number {
-  return roundMoney(quantity * unitPrice);
+  const unit = toCents(unitPrice);
+  // quantity may be fractional (e.g. 1.5 hours) — round after multiply in cents space
+  return fromCents(Math.round(unit * quantity));
 }
 
 export function computeVatTotals(params: {
   exclVat: number;
   vatPercentage: number;
 }): { exclVat: number; vatAmount: number; inclVat: number } {
-  const exclVat = roundMoney(params.exclVat);
-  const vatAmount = roundMoney((exclVat * params.vatPercentage) / 100);
-  const inclVat = roundMoney(exclVat + vatAmount);
-  return { exclVat, vatAmount, inclVat };
+  const result = vatCents(toCents(params.exclVat), params.vatPercentage);
+  return {
+    exclVat: fromCents(result.excl),
+    vatAmount: fromCents(result.vat),
+    inclVat: fromCents(result.incl),
+  };
 }
 
 export function formatEuro(amount: number): string {

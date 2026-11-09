@@ -5,8 +5,6 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
-import type { ProfileRole } from "@/types/database";
 
 export default async function SignupPage() {
   const session = await getAuthenticatedSession();
@@ -20,22 +18,16 @@ export default async function SignupPage() {
     const email = formData.get("email");
     const password = formData.get("password");
     const fullName = formData.get("full_name");
-    const role = formData.get("role");
 
     if (
       typeof email !== "string" ||
       typeof password !== "string" ||
-      typeof fullName !== "string" ||
-      typeof role !== "string"
+      typeof fullName !== "string"
     ) {
       redirect("/signup?error=form");
     }
 
-    const normalizedRole = role as ProfileRole;
-    if (normalizedRole !== "employer" && normalizedRole !== "employee") {
-      redirect("/signup?error=role");
-    }
-
+    // Public self-signup is employer-only. Employees join exclusively via Admin invite.
     const supabase = createSupabaseServerClient();
     const { getSiteUrl } = await import("@/lib/supabase/public-env");
     const origin = getSiteUrl();
@@ -47,7 +39,7 @@ export default async function SignupPage() {
         emailRedirectTo: `${origin}/auth/callback`,
         data: {
           full_name: fullName.trim(),
-          role: normalizedRole,
+          role: "employer",
         },
       },
     });
@@ -66,46 +58,37 @@ export default async function SignupPage() {
           <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
             NEXORA
           </div>
-          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Create account</h1>
+          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Account aanmaken</h1>
           <p className="mt-2 text-sm text-zinc-400">
-            Employers can create an organization after signup. Employees join via invitation.
+            Publieke registratie is alleen voor werkgevers. Medewerkers ontvangen een
+            uitnodiging van hun bedrijf.
           </p>
         </div>
 
         <Card>
           <form action={signUp} className="space-y-4">
-            <Input name="full_name" label="Full name" required autoComplete="name" />
-            <Input name="email" type="email" label="Work email" required autoComplete="email" />
+            <Input name="full_name" label="Volledige naam" required autoComplete="name" />
+            <Input name="email" type="email" label="Zakelijk e-mailadres" required autoComplete="email" />
             <Input
               name="password"
               type="password"
-              label="Password"
+              label="Wachtwoord"
               required
               autoComplete="new-password"
               minLength={8}
-              hint="At least 8 characters."
-            />
-            <Select
-              name="role"
-              label="Role"
-              required
-              defaultValue="employer"
-              options={[
-                { value: "employer", label: "Employer (organization owner)" },
-                { value: "employee", label: "Employee (join via invite)" },
-              ]}
+              hint="Minimaal 8 tekens."
             />
 
             <Button type="submit" className="w-full">
-              Create account
+              Account aanmaken
             </Button>
           </form>
         </Card>
 
         <div className="text-center text-sm text-zinc-400">
-          Already have an account?{" "}
+          Al een account?{" "}
           <Link className="font-medium text-accent hover:text-emerald-300" href="/login">
-            Sign in
+            Inloggen
           </Link>
         </div>
       </div>

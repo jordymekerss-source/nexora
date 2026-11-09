@@ -16,7 +16,9 @@ import {
   type DemoPersona,
 } from "@/lib/demo/persona";
 import { readDemoStore, seedDemoStoreIfEmpty, updateDemoStore } from "@/lib/demo/store";
+import { assertModuleEnabled } from "@/lib/entitlements/check";
 import { computeWorkedMinutes } from "@/lib/time-entry";
+import { serverNowIso, validateClockRange } from "@/lib/time/validate";
 import { isNonEmptyString, isUuid, parseIntSafe } from "@/lib/validation";
 import type {
   EmployeeCertificateRow,
@@ -123,6 +125,7 @@ export async function assignEmployeeFormAction(formData: FormData): Promise<void
 
 export async function clockInOnProject(projectId: string, notes?: string): Promise<{ entryId: string }> {
   const { session, tenantId } = await requireEmployeeSession();
+  await assertModuleEnabled(tenantId, "time");
   if (!isUuid(projectId)) {
     throw new Error("Invalid project.");
   }
@@ -131,6 +134,7 @@ export async function clockInOnProject(projectId: string, notes?: string): Promi
     throw new Error("Live clock-in requires Supabase.");
   }
 
+  const clockIn = serverNowIso();
   let entryId = "";
   await updateDemoStore((store) => {
     const assigned = store.assignments.some(
@@ -151,11 +155,21 @@ export async function clockInOnProject(projectId: string, notes?: string): Promi
       tenant_id: tenantId,
       user_id: session.userId,
       project_id: projectId,
-      clock_in: new Date().toISOString(),
+      clock_in: clockIn,
       clock_out: null,
       break_minutes: 0,
       notes: notes?.trim() || null,
       status: "pending",
+    });
+    store.auditEvents.unshift({
+      id: randomUUID(),
+      tenant_id: tenantId,
+      actor_user_id: session.userId,
+      action: "timesheet.clock_in",
+      entity_type: "time_entry",
+      entity_id: entryId,
+      metadata: { projectId },
+      created_at: clockIn,
     });
   });
 
@@ -164,11 +178,13 @@ export async function clockInOnProject(projectId: string, notes?: string): Promi
 }
 
 export async function clockOutCurrent(): Promise<void> {
-  const { session } = await requireEmployeeSession();
+  const { session, tenantId } = await requireEmployeeSession();
+  await assertModuleEnabled(tenantId, "time");
   if (!isDemoMode()) {
     throw new Error("Live clock-out requires Supabase.");
   }
 
+  const clockOut = serverNowIso();
   await updateDemoStore((store) => {
     const open = store.timeEntries.find(
       (row) => row.user_id === session.userId && row.clock_out === null,
@@ -176,10 +192,106 @@ export async function clockOutCurrent(): Promise<void> {
     if (open === undefined) {
       throw new Error("Geen open inkloksessie gevonden.");
     }
-    open.clock_out = new Date().toISOString();
+    const openBreak = store.breakEntries.find(
+      (row) => row.time_entry_id === open.id && row.break_end === null,
+    );
+    if (openBreak !== undefined) {
+      throw new Error("Beëindig eerst de actieve pauze.");
+    }
+    const issue = validateClockRange({
+      clockInIso: open.clock_in,
+      clockOutIso: clockOut,
+      breakMinutes: open.break_minutes,
+    });
+    if (issue !== null) {
+      throw new Error(`Ongeldige tijdregistratie (${issue}).`);
+    }
+    open.clock_out = clockOut;
+    store.auditEvents.unshift({
+      id: randomUUID(),
+      tenant_id: tenantId,
+      actor_user_id: session.userId,
+      action: "timesheet.clock_out",
+      entity_type: "time_entry",
+      entity_id: open.id,
+      metadata: {},
+      created_at: clockOut,
+    });
   });
 
   revalidateOps(["/employee"]);
+}
+
+export async function correctTimeEntryFormAction(formData: FormData): Promise<void> {
+  const { session, tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "time");
+
+  const entryId = String(formData.get("entry_id") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  const clockIn = String(formData.get("clock_in") ?? "");
+  const clockOutRaw = String(formData.get("clock_out") ?? "").trim();
+  const breakMinutes = parseIntSafe(formData.get("break_minutes"), 0);
+  const clockOut = clockOutRaw.length > 0 ? new Date(clockOutRaw).toISOString() : null;
+  const clockInIso = new Date(clockIn).toISOString();
+
+  if (!isUuid(entryId) || !isNonEmptyString(reason)) {
+    redirect("/dashboard/time?error=form");
+  }
+
+  const issue = validateClockRange({
+    clockInIso,
+    clockOutIso: clockOut,
+    breakMinutes: Math.max(0, breakMinutes),
+  });
+  if (issue !== null) {
+    redirect(`/dashboard/time?error=${issue}`);
+  }
+
+  if (!isDemoMode()) {
+    redirect("/dashboard/time?error=mode");
+  }
+
+  try {
+    await updateDemoStore((store) => {
+      const entry = store.timeEntries.find((row) => row.id === entryId && row.tenant_id === tenantId);
+      if (entry === undefined) {
+        throw new Error("Entry not found.");
+      }
+      store.timeEntryCorrections.unshift({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        time_entry_id: entry.id,
+        corrected_by: session.userId,
+        reason,
+        old_clock_in: entry.clock_in,
+        old_clock_out: entry.clock_out,
+        old_break_minutes: entry.break_minutes,
+        new_clock_in: clockInIso,
+        new_clock_out: clockOut,
+        new_break_minutes: Math.max(0, breakMinutes),
+        created_at: serverNowIso(),
+      });
+      entry.clock_in = clockInIso;
+      entry.clock_out = clockOut;
+      entry.break_minutes = Math.max(0, breakMinutes);
+      store.auditEvents.unshift({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        actor_user_id: session.userId,
+        action: "timesheet.corrected",
+        entity_type: "time_entry",
+        entity_id: entry.id,
+        metadata: { reason },
+        created_at: serverNowIso(),
+      });
+    });
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    redirect("/dashboard/time?error=correct");
+  }
+
+  revalidateOps(["/dashboard/time"]);
+  redirect("/dashboard/time?corrected=1");
 }
 
 export async function clockInFormAction(formData: FormData): Promise<void> {
@@ -412,6 +524,7 @@ export async function listProjectsForEmployer(): Promise<ProjectRow[]> {
 
 export async function createVehicleFormAction(formData: FormData): Promise<void> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "fleet");
   if (!isDemoMode()) redirect("/employer/fleet?error=mode");
 
   const licensePlate = String(formData.get("license_plate") ?? "").trim().toUpperCase();
@@ -442,6 +555,7 @@ export async function createVehicleFormAction(formData: FormData): Promise<void>
 
 export async function createToolFormAction(formData: FormData): Promise<void> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "tools");
   if (!isDemoMode()) redirect("/employer/tools?error=mode");
 
   const name = String(formData.get("name") ?? "").trim();
@@ -473,6 +587,7 @@ export async function createToolFormAction(formData: FormData): Promise<void> {
 
 export async function createCertificateFormAction(formData: FormData): Promise<void> {
   const { tenantId } = await requireEmployerSession();
+  await assertModuleEnabled(tenantId, "hr");
   if (!isDemoMode()) redirect("/employer/hr?error=mode");
 
   const userId = String(formData.get("user_id") ?? "");

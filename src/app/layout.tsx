@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans } from "next/font/google";
-import { assertDemoModeAllowed } from "@/lib/demo/mode";
+import { assertRuntimeConfiguration } from "@/lib/runtime/env";
 import "./globals.css";
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  assertDemoModeAllowed();
+  assertRuntimeConfiguration();
 
   return (
     <html lang="nl" className="dark">
