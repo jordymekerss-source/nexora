@@ -1,69 +1,44 @@
-# NEXORA Business OS — Core MVP
+# NEXORA Business OS
 
-Multi-tenant ERP for field services, construction, and installation businesses.
+**Run your business. Build better.**
 
-**Stack:** Next.js 14 (App Router) · TypeScript · Supabase Auth + PostgreSQL RLS · Tailwind CSS · Vercel-ready
+Premium modular multi-tenant SaaS for field and service companies (Netherlands first).
 
-## Features
+> **Status:** Not production-ready. Interactive demo + schema foundation.  
+> See `docs/AUDIT_REPORT.md`, `BUILD_STATUS.md`, and `SESSION_HANDOFF.md`.
 
-- Tenant isolation via `tenant_id` + Supabase Row Level Security
-- Roles: `super_admin`, `employer`, `employee`
-- Projects CRUD (employer)
-- Time clock / entries with employee self-edit of pending rows and employer approval
-- Project photo uploads to private Storage with signed URLs
-- Employer team invites via Supabase Auth Admin API
-- Quotes (Offertes) with line items, VAT totals, and convert-to-project
-- Invoices (Facturatie) from approved hours, status workflow, and print-ready view
+## Stack
 
-## Setup
+Next.js 14 (App Router) · TypeScript · Tailwind · Supabase Auth/Postgres RLS · Demo file store
 
-### Instant demo (no Supabase required)
+## Quick demo
 
 ```bash
 npm install
-echo 'NEXT_PUBLIC_DEMO_MODE=true' > .env.local
+cp .env.example .env.local
+# Ensure NEXT_PUBLIC_DEMO_MODE=true
+# For `next start` demo hosts also set ALLOW_DEMO_IN_PRODUCTION=true
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — demo mode auto-seeds clients, quotes, invoices and weekly planning. Use **Seed demo data** on the Klanten page to reload sample data.
+Open http://localhost:3000 — use the persona switcher to move between employer and employees.
 
-### Production / Supabase
+## Live Supabase
 
-1. Create a Supabase project.
-2. Run migrations in order from `supabase/migrations/` (SQL Editor or CLI), including CRM/planning.
-3. Copy `.env.example` → `.env.local` and fill in keys (`NEXT_PUBLIC_DEMO_MODE=false`).
-4. In Supabase Auth → URL configuration, allow `NEXT_PUBLIC_SITE_URL` and `/auth/callback`.
-5. Install and run:
-
-```bash
-npm install
-npm run dev
-```
-
-## Deploy (Vercel)
-
-1. Import the repo in Vercel.
-2. Set the same env vars as `.env.example`.
-3. Deploy. Apply the SQL migration against your production Supabase project before first login.
-
-## First users
-
-1. Sign up as **Employer**, then create an organization on `/onboarding/create-organization`.
-2. From **Team**, invite employees by email (service role required).
-3. Create a `super_admin` manually in SQL if needed:
-
-```sql
--- After the auth user exists:
-update public.profiles
-set role = 'super_admin', tenant_id = null
-where id = '<auth-user-uuid>';
-```
+1. Apply SQL migrations in `supabase/migrations/` in order.
+2. Set `NEXT_PUBLIC_DEMO_MODE=false` and Supabase keys.
+3. Never enable demo mode on real tenant production without explicit approval.
 
 ## Scripts
 
-| Command           | Description                |
-| ----------------- | -------------------------- |
-| `npm run dev`     | Local development server   |
-| `npm run build`   | Production build           |
-| `npm run lint`    | ESLint                     |
-| `npm run typecheck` | `tsc --noEmit`           |
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Development server |
+| `npm run build` / `start` | Production build/serve |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Vitest unit tests |
+
+## Documentation
+
+All product docs live under `docs/`. Start with `docs/MASTER_SPEC.md` and `docs/AUDIT_REPORT.md`.

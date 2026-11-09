@@ -9,11 +9,14 @@ import {
 import { nextInvoiceNumber, nextQuoteNumber } from "@/lib/billing-numbers";
 import { computeVatTotals, lineTotal, roundMoney } from "@/lib/money";
 import type {
+  AuditEventRow,
+  BreakEntryRow,
   ClientRow,
   EmployeeCertificateRow,
   InvoiceItemRow,
   InvoiceRow,
   InvoiceStatus,
+  ModuleConfigRow,
   ProfileRow,
   ProjectAssignmentRow,
   ProjectRow,
@@ -21,6 +24,7 @@ import type {
   QuoteItemRow,
   QuoteRow,
   QuoteStatus,
+  TimeEntryCorrectionRow,
   TimeEntryRow,
   ToolRow,
   VehicleRow,
@@ -38,6 +42,10 @@ export type DemoStore = {
   invoiceItems: InvoiceItemRow[];
   schedules: ProjectScheduleRow[];
   timeEntries: TimeEntryRow[];
+  breakEntries: BreakEntryRow[];
+  timeEntryCorrections: TimeEntryCorrectionRow[];
+  auditEvents: AuditEventRow[];
+  moduleConfigs: ModuleConfigRow[];
   assignments: ProjectAssignmentRow[];
   vehicles: VehicleRow[];
   tools: ToolRow[];
@@ -97,6 +105,10 @@ function emptyStore(): DemoStore {
     invoiceItems: [],
     schedules: [],
     timeEntries: [],
+    breakEntries: [],
+    timeEntryCorrections: [],
+    auditEvents: [],
+    moduleConfigs: [],
     assignments: [],
     vehicles: [],
     tools: [],
@@ -115,6 +127,10 @@ function normalizeStore(raw: DemoStore): DemoStore {
     tools: raw.tools ?? [],
     certificates: raw.certificates ?? [],
     workOrders: raw.workOrders ?? [],
+    breakEntries: raw.breakEntries ?? [],
+    timeEntryCorrections: raw.timeEntryCorrections ?? [],
+    auditEvents: raw.auditEvents ?? [],
+    moduleConfigs: raw.moduleConfigs ?? [],
   };
 }
 
@@ -614,6 +630,35 @@ export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boo
     invoiceItems,
     schedules,
     timeEntries,
+    breakEntries: [],
+    timeEntryCorrections: [],
+    auditEvents: [],
+    moduleConfigs: [
+      {
+        id: randomUUID(),
+        tenant_id: DEMO_TENANT_ID,
+        module_key: "time",
+        enabled: true,
+        settings: {},
+        updated_at: createdAt,
+      },
+      {
+        id: randomUUID(),
+        tenant_id: DEMO_TENANT_ID,
+        module_key: "crm",
+        enabled: true,
+        settings: {},
+        updated_at: createdAt,
+      },
+      {
+        id: randomUUID(),
+        tenant_id: DEMO_TENANT_ID,
+        module_key: "fleet",
+        enabled: true,
+        settings: {},
+        updated_at: createdAt,
+      },
+    ],
     assignments,
     vehicles,
     tools,

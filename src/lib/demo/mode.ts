@@ -1,13 +1,27 @@
+/**
+ * Demo mode must be an explicit opt-in.
+ * Never treat "missing Supabase env" as permission to run unauthenticated demo in production.
+ */
 export function isDemoMode(): boolean {
-  if (process.env["NEXT_PUBLIC_DEMO_MODE"] === "true") {
-    return true;
+  return process.env["NEXT_PUBLIC_DEMO_MODE"] === "true";
+}
+
+export function assertDemoModeAllowed(): void {
+  if (!isDemoMode()) {
+    return;
   }
-  if (process.env["NEXT_PUBLIC_DEMO_MODE"] === "false") {
-    return false;
+
+  const allowInProduction = process.env["ALLOW_DEMO_IN_PRODUCTION"] === "true";
+  if (process.env["NODE_ENV"] === "production" && !allowInProduction) {
+    throw new Error(
+      "Demo mode is enabled in production without ALLOW_DEMO_IN_PRODUCTION=true. Refusing to start unsafe demo auth.",
+    );
   }
-  const url = process.env["NEXT_PUBLIC_SUPABASE_URL"];
-  const key = process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
-  return url === undefined || url.length === 0 || key === undefined || key.length === 0;
+}
+
+/** True when the process is intentionally running the public demo host. */
+export function isExplicitDemoDeployment(): boolean {
+  return isDemoMode() && process.env["ALLOW_DEMO_IN_PRODUCTION"] === "true";
 }
 
 export const DEMO_TENANT_ID = "11111111-1111-4111-8111-111111111111";

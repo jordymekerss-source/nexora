@@ -204,9 +204,105 @@ export async function clockOutFormAction(): Promise<void> {
   redirect("/employee?clocked=out");
 }
 
+export async function startBreakAction(): Promise<void> {
+  const { session, tenantId } = await requireEmployeeSession();
+  if (!isDemoMode()) {
+    redirect("/employee?error=mode");
+  }
+
+  try {
+    await updateDemoStore((store) => {
+      const open = store.timeEntries.find(
+        (row) => row.user_id === session.userId && row.clock_out === null,
+      );
+      if (open === undefined) {
+        throw new Error("Geen open dienst.");
+      }
+      const openBreak = store.breakEntries.find(
+        (row) => row.time_entry_id === open.id && row.break_end === null,
+      );
+      if (openBreak !== undefined) {
+        throw new Error("Pauze loopt al.");
+      }
+      store.breakEntries.unshift({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        time_entry_id: open.id,
+        user_id: session.userId,
+        break_start: new Date().toISOString(),
+        break_end: null,
+        notes: null,
+        created_at: new Date().toISOString(),
+      });
+      store.auditEvents.unshift({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        actor_user_id: session.userId,
+        action: "break.started",
+        entity_type: "time_entry",
+        entity_id: open.id,
+        metadata: {},
+        created_at: new Date().toISOString(),
+      });
+    });
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    redirect("/employee?error=break");
+  }
+  revalidateOps(["/employee"]);
+  redirect("/employee?break=start");
+}
+
+export async function endBreakAction(): Promise<void> {
+  const { session, tenantId } = await requireEmployeeSession();
+  if (!isDemoMode()) {
+    redirect("/employee?error=mode");
+  }
+
+  try {
+    await updateDemoStore((store) => {
+      const open = store.timeEntries.find(
+        (row) => row.user_id === session.userId && row.clock_out === null,
+      );
+      if (open === undefined) {
+        throw new Error("Geen open dienst.");
+      }
+      const openBreak = store.breakEntries.find(
+        (row) => row.time_entry_id === open.id && row.break_end === null,
+      );
+      if (openBreak === undefined) {
+        throw new Error("Geen open pauze.");
+      }
+      const end = new Date();
+      openBreak.break_end = end.toISOString();
+      const elapsed = Math.max(
+        0,
+        Math.round((end.getTime() - new Date(openBreak.break_start).getTime()) / 60000),
+      );
+      open.break_minutes += elapsed;
+      store.auditEvents.unshift({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        actor_user_id: session.userId,
+        action: "break.ended",
+        entity_type: "time_entry",
+        entity_id: open.id,
+        metadata: { minutes: elapsed },
+        created_at: new Date().toISOString(),
+      });
+    });
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    redirect("/employee?error=break");
+  }
+  revalidateOps(["/employee"]);
+  redirect("/employee?break=end");
+}
+
 export async function getEmployeeMobileBundle(): Promise<{
   assignedProjects: ProjectRow[];
   openEntry: TimeEntryRow | null;
+  openBreak: { id: string; break_start: string } | null;
   recentEntries: TimeEntryRow[];
 }> {
   const { session } = await requireEmployeeSession();
@@ -225,12 +321,26 @@ export async function getEmployeeMobileBundle(): Promise<{
       store.timeEntries.find(
         (row) => row.user_id === session.userId && row.clock_out === null,
       ) ?? null;
+    const openBreakRow =
+      openEntry === null
+        ? undefined
+        : store.breakEntries.find(
+            (row) => row.time_entry_id === openEntry.id && row.break_end === null,
+          );
     const recentEntries = store.timeEntries
       .filter((row) => row.user_id === session.userId)
       .slice(0, 8);
-    return { assignedProjects, openEntry, recentEntries };
+    return {
+      assignedProjects,
+      openEntry,
+      openBreak:
+        openBreakRow === undefined
+          ? null
+          : { id: openBreakRow.id, break_start: openBreakRow.break_start },
+      recentEntries,
+    };
   }
-  return { assignedProjects: [], openEntry: null, recentEntries: [] };
+  return { assignedProjects: [], openEntry: null, openBreak: null, recentEntries: [] };
 }
 
 export async function getEmployerProjectBundle(projectId: string): Promise<{

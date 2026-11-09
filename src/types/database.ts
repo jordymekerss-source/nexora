@@ -183,6 +183,52 @@ export type WorkOrderRow = {
   created_by: string | null;
 };
 
+export type AuditEventRow = {
+  id: string;
+  tenant_id: string | null;
+  actor_user_id: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type BreakEntryRow = {
+  id: string;
+  tenant_id: string;
+  time_entry_id: string;
+  user_id: string;
+  break_start: string;
+  break_end: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type TimeEntryCorrectionRow = {
+  id: string;
+  tenant_id: string;
+  time_entry_id: string;
+  corrected_by: string;
+  reason: string;
+  old_clock_in: string;
+  old_clock_out: string | null;
+  old_break_minutes: number;
+  new_clock_in: string;
+  new_clock_out: string | null;
+  new_break_minutes: number;
+  created_at: string;
+};
+
+export type ModuleConfigRow = {
+  id: string;
+  tenant_id: string;
+  module_key: string;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  updated_at: string;
+};
+
 type Rel = {
   foreignKeyName: string;
   columns: string[];
@@ -553,6 +599,106 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           created_by?: string | null;
+        };
+        Relationships: Rel[];
+      };
+      audit_events: {
+        Row: AuditEventRow;
+        Insert: {
+          id?: string;
+          tenant_id?: string | null;
+          actor_user_id?: string | null;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          metadata?: Record<string, unknown>;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string | null;
+          actor_user_id?: string | null;
+          action?: string;
+          entity_type?: string;
+          entity_id?: string | null;
+          metadata?: Record<string, unknown>;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      break_entries: {
+        Row: BreakEntryRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          time_entry_id: string;
+          user_id: string;
+          break_start: string;
+          break_end?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          time_entry_id?: string;
+          user_id?: string;
+          break_start?: string;
+          break_end?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      time_entry_corrections: {
+        Row: TimeEntryCorrectionRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          time_entry_id: string;
+          corrected_by: string;
+          reason: string;
+          old_clock_in: string;
+          old_clock_out?: string | null;
+          old_break_minutes: number;
+          new_clock_in: string;
+          new_clock_out?: string | null;
+          new_break_minutes: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          time_entry_id?: string;
+          corrected_by?: string;
+          reason?: string;
+          old_clock_in?: string;
+          old_clock_out?: string | null;
+          old_break_minutes?: number;
+          new_clock_in?: string;
+          new_clock_out?: string | null;
+          new_break_minutes?: number;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      module_configs: {
+        Row: ModuleConfigRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          module_key: string;
+          enabled?: boolean;
+          settings?: Record<string, unknown>;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          module_key?: string;
+          enabled?: boolean;
+          settings?: Record<string, unknown>;
+          updated_at?: string;
         };
         Relationships: Rel[];
       };

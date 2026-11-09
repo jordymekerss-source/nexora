@@ -2,7 +2,9 @@ import Link from "next/link";
 import {
   clockInFormAction,
   clockOutFormAction,
+  endBreakAction,
   getEmployeeMobileBundle,
+  startBreakAction,
 } from "@/app/actions/ops";
 import { PersonaSwitcher } from "@/components/demo/PersonaSwitcher";
 import { Button } from "@/components/ui/Button";
@@ -21,7 +23,8 @@ type PageProps = {
 
 export default async function EmployeeMobilePage({ searchParams }: PageProps) {
   const { session } = await requireEmployeeSession();
-  const { assignedProjects, openEntry, recentEntries } = await getEmployeeMobileBundle();
+  const { assignedProjects, openEntry, openBreak, recentEntries } =
+    await getEmployeeMobileBundle();
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -54,6 +57,16 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
           Werkbon met handtekening opgeslagen.
         </div>
       ) : null}
+      {searchParams["break"] === "start" ? (
+        <div className="rounded-md border border-amber-900 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+          Pauze gestart (echte pauze-registratie).
+        </div>
+      ) : null}
+      {searchParams["break"] === "end" ? (
+        <div className="rounded-md border border-emerald-900 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
+          Pauze beëindigd en opgeteld bij de dienst.
+        </div>
+      ) : null}
       {typeof searchParams["error"] === "string" ? (
         <div className="rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">
           Actie mislukt ({searchParams["error"]}).
@@ -81,11 +94,32 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
                 min
               </div>
             </div>
-            <form action={clockOutFormAction}>
-              <Button type="submit" className="w-full" variant="danger">
-                Uitklokken
-              </Button>
-            </form>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {openBreak === null ? (
+                <form action={startBreakAction}>
+                  <Button type="submit" className="w-full" variant="secondary">
+                    Pauze starten
+                  </Button>
+                </form>
+              ) : (
+                <form action={endBreakAction}>
+                  <Button type="submit" className="w-full" variant="secondary">
+                    Pauze stoppen
+                  </Button>
+                </form>
+              )}
+              <form action={clockOutFormAction}>
+                <Button type="submit" className="w-full" variant="danger" disabled={openBreak !== null}>
+                  Uitklokken
+                </Button>
+              </form>
+            </div>
+            {openBreak !== null ? (
+              <p className="text-xs text-amber-300">
+                Pauze actief sinds {formatDateTime(openBreak.break_start)}. Klok eerst de pauze
+                uit voordat je uitklokt.
+              </p>
+            ) : null}
             <Link
               href={`/employee/work-order?projectId=${openEntry.project_id}`}
               className="inline-flex w-full items-center justify-center rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200"
