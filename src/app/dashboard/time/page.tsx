@@ -16,6 +16,36 @@ import {
 import type { ProfileRow, ProjectRow, TimeEntryRow } from "@/types/database";
 
 export default async function TimeEntriesPage() {
+  const { isDemoMode } = await import("@/lib/demo/mode");
+  if (isDemoMode()) {
+    const { readDemoStore, seedDemoStoreIfEmpty } = await import("@/lib/demo/store");
+    await seedDemoStoreIfEmpty(false);
+    const store = await readDemoStore();
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold text-zinc-50">Time</h1>
+        <p className="text-sm text-zinc-400">
+          Demo-modus toont goedgekeurde uren uit de seed (volledige clock UI vereist Supabase).
+        </p>
+        <Card className="overflow-hidden p-0">
+          <div className="divide-y divide-zinc-900">
+            {store.timeEntries.map((entry) => (
+              <div key={entry.id} className="px-4 py-3 text-sm text-zinc-300">
+                <div className="font-medium text-zinc-100">
+                  {store.projects.find((project) => project.id === entry.project_id)?.title ??
+                    entry.project_id}
+                </div>
+                <div className="mt-1 text-zinc-500">
+                  {entry.status} · break {entry.break_minutes}m
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const { session, tenantId } = await requireDashboardSession();
 
   if (session.profile.role === "super_admin") {

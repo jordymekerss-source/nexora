@@ -14,6 +14,30 @@ type PageProps = {
 };
 
 export default async function TeamPage({ searchParams }: PageProps) {
+  const { isDemoMode } = await import("@/lib/demo/mode");
+  if (isDemoMode()) {
+    const { readDemoStore, seedDemoStoreIfEmpty } = await import("@/lib/demo/store");
+    await seedDemoStoreIfEmpty(false);
+    const store = await readDemoStore();
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold text-zinc-50">Team</h1>
+        <Card className="overflow-hidden p-0">
+          <div className="divide-y divide-zinc-900">
+            {store.profiles.map((profile) => (
+              <div key={profile.id} className="flex items-center justify-between px-4 py-3 text-sm">
+                <div>
+                  <div className="font-medium text-zinc-100">{profile.full_name}</div>
+                  <div className="text-zinc-500">{profile.role}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const { session, tenantId } = await requireDashboardSession();
 
   if (session.profile.role === "super_admin") {

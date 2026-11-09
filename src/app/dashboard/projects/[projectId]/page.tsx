@@ -19,6 +19,11 @@ type PageProps = {
 };
 
 export default async function ProjectDetailPage({ params }: PageProps) {
+  const { isDemoMode } = await import("@/lib/demo/mode");
+  if (isDemoMode()) {
+    redirect("/dashboard/projects");
+  }
+
   const projectId = params.projectId;
 
   if (!isUuid(projectId)) {

@@ -1,14 +1,84 @@
 import Link from "next/link";
-import { requireDashboardSession } from "@/lib/auth/require-user";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { redirect } from "next/navigation";
+import { seedDemoDataFormAction } from "@/app/actions/crm_billing";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { requireDashboardSession } from "@/lib/auth/require-user";
+import { isDemoMode } from "@/lib/demo/mode";
+import { readDemoStore, seedDemoStoreIfEmpty } from "@/lib/demo/store";
+import { formatEuro, roundMoney } from "@/lib/money";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ProjectRow, TenantRow } from "@/types/database";
 
 export default async function DashboardHomePage() {
+  if (isDemoMode()) {
+    await seedDemoStoreIfEmpty(false);
+    const store = await readDemoStore();
+    const open = roundMoney(
+      store.invoices
+        .filter((invoice) => invoice.status === "sent" || invoice.status === "overdue")
+        .reduce((sum, invoice) => sum + Number(invoice.total_amount), 0),
+    );
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-zinc-50">{store.tenantName}</h1>
+          <p className="mt-2 text-sm text-zinc-400">
+            Demo modus actief — alle CRM-, offerte-, factuur- en planningdata staat klaar.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card className="p-4">
+            <div className="text-xs uppercase text-zinc-500">Klanten</div>
+            <div className="mt-2 text-2xl font-semibold">{store.clients.length}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs uppercase text-zinc-500">Offertes</div>
+            <div className="mt-2 text-2xl font-semibold">{store.quotes.length}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs uppercase text-zinc-500">Openstaand</div>
+            <div className="mt-2 text-2xl font-semibold text-accent">{formatEuro(open)}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs uppercase text-zinc-500">Planning</div>
+            <div className="mt-2 text-2xl font-semibold">{store.schedules.length}</div>
+          </Card>
+        </div>
+
+        <Card>
+          <h2 className="text-lg font-semibold text-zinc-100">Snel naar modules</h2>
+          <div className="mt-4 flex flex-wrap gap-3 text-sm">
+            <Link className="text-accent hover:text-emerald-300" href="/employer/clients">
+              Klanten
+            </Link>
+            <Link className="text-accent hover:text-emerald-300" href="/employer/quotes">
+              Offertes
+            </Link>
+            <Link className="text-accent hover:text-emerald-300" href="/employer/invoices">
+              Facturen
+            </Link>
+            <Link className="text-accent hover:text-emerald-300" href="/employer/planning">
+              Planning
+            </Link>
+          </div>
+          <form action={seedDemoDataFormAction} className="mt-6">
+            <input type="hidden" name="force" value="1" />
+            <Button type="submit" variant="secondary">
+              Demo data opnieuw laden
+            </Button>
+          </form>
+        </Card>
+      </div>
+    );
+  }
+
   const { session, tenantId } = await requireDashboardSession();
 
   if (session.profile.role === "super_admin") {
+    const { getSupabaseAdminClient } = await import("@/lib/supabase/admin");
     const admin = getSupabaseAdminClient();
     const { data: tenants } = await admin
       .from("tenants")
@@ -18,43 +88,25 @@ export default async function DashboardHomePage() {
 
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">Platform overview</h1>
-          <p className="mt-2 text-sm text-zinc-400">
-            Super admins operate across tenants. Tenant users stay scoped by Row Level Security.
-          </p>
-        </div>
-
+        <h1 className="text-2xl font-semibold text-zinc-50">Platform overview</h1>
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Tenants</h2>
-          <p className="mt-1 text-sm text-zinc-500">Latest organizations in the system.</p>
-
-          <div className="mt-4 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-500">
                 <tr>
                   <th className="py-2 pr-4">Name</th>
-                  <th className="py-2 pr-4">Created</th>
                   <th className="py-2">Id</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900">
                 {(tenants ?? []).map((tenant) => (
-                  <tr key={tenant.id} className="text-zinc-300">
-                    <td className="py-3 pr-4 font-medium text-zinc-100">{tenant.name}</td>
-                    <td className="py-3 pr-4 text-zinc-500">
-                      {new Date(tenant.created_at).toLocaleString()}
-                    </td>
+                  <tr key={tenant.id}>
+                    <td className="py-3 pr-4">{tenant.name}</td>
                     <td className="py-3 font-mono text-xs text-zinc-500">{tenant.id}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="mt-4 text-sm text-zinc-500">
-            Want operational work inside a tenant? Sign in as an employer or employee for that
-            organization.
           </div>
         </Card>
       </div>
@@ -62,7 +114,7 @@ export default async function DashboardHomePage() {
   }
 
   if (tenantId === null) {
-    return null;
+    redirect("/onboarding/need-tenant");
   }
 
   const supabase = createSupabaseServerClient();
@@ -72,96 +124,21 @@ export default async function DashboardHomePage() {
     .eq("tenant_id", tenantId)
     .returns<Pick<ProjectRow, "id" | "title" | "status" | "client_name">[]>();
 
-  const { data: tenantData } = await supabase
-    .from("tenants")
-    .select("name")
-    .eq("id", tenantId)
-    .maybeSingle();
-
-  const tenantName =
-    tenantData !== null && typeof tenantData === "object" && "name" in tenantData
-      ? String((tenantData as { name: string }).name)
-      : "Workspace";
-
-  const activeCount =
-    projects?.filter((project) => project.status === "active").length ?? 0;
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">
-          {tenantName}
-        </h1>
-        <p className="mt-2 text-sm text-zinc-400">
-          {session.profile.role === "employer"
-            ? "Manage projects, approvals, and your team."
-            : "Track time on active jobs and upload site photos."}
-        </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Projects</div>
-          <div className="mt-2 text-2xl font-semibold text-zinc-50">{projects?.length ?? 0}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Active</div>
-          <div className="mt-2 text-2xl font-semibold text-accent">{activeCount}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Shortcuts</div>
-          <div className="mt-3 flex flex-col gap-2 text-sm">
-            <Link className="text-accent hover:text-emerald-300" href="/dashboard/projects">
-              Projects
-            </Link>
-            <Link className="text-accent hover:text-emerald-300" href="/dashboard/time">
-              Time entries
-            </Link>
-          </div>
-        </Card>
-      </div>
-
+      <h1 className="text-2xl font-semibold text-zinc-50">Workspace</h1>
       <Card>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-100">Recent projects</h2>
-            <p className="mt-1 text-sm text-zinc-500">Latest work across your organization.</p>
-          </div>
-          {session.profile.role === "employer" ? (
-            <Link
-              className="rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-zinc-500"
-              href="/dashboard/projects/new"
-            >
-              New project
-            </Link>
-          ) : null}
-        </div>
-
-        <div className="mt-4 divide-y divide-zinc-900">
-          {(projects ?? []).slice(0, 6).map((project) => (
+        <div className="divide-y divide-zinc-900">
+          {(projects ?? []).slice(0, 8).map((project) => (
             <Link
               key={project.id}
               href={`/dashboard/projects/${project.id}`}
-              className="flex items-center justify-between py-3 text-sm transition hover:text-white"
+              className="flex items-center justify-between py-3 text-sm"
             >
-              <span className="font-medium text-zinc-100">{project.title}</span>
-              <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs uppercase text-zinc-400">
-                {project.status}
-              </span>
+              <span>{project.title}</span>
+              <span className="text-xs uppercase text-zinc-500">{project.status}</span>
             </Link>
           ))}
-          {(projects ?? []).length === 0 ? (
-            <div className="py-6 text-sm text-zinc-500">
-              No projects yet.{" "}
-              {session.profile.role === "employer" ? (
-                <Link className="text-accent hover:text-emerald-300" href="/dashboard/projects/new">
-                  Create the first project
-                </Link>
-              ) : (
-                "Your employer will create jobs here."
-              )}
-            </div>
-          ) : null}
         </div>
       </Card>
     </div>

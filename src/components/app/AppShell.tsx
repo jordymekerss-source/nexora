@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
+  CalendarDays,
   FileText,
   FolderKanban,
   LayoutDashboard,
@@ -23,8 +24,10 @@ function navForRole(role: ProfileRole): readonly NavItem[] {
     return [
       ...base,
       { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+      { href: "/employer/clients", label: "Klanten", icon: Users },
       { href: "/employer/quotes", label: "Offertes", icon: FileText },
       { href: "/employer/invoices", label: "Facturen", icon: Receipt },
+      { href: "/employer/planning", label: "Planning", icon: CalendarDays },
       { href: "/dashboard/team", label: "Team", icon: Users },
     ];
   }
@@ -55,7 +58,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-64 flex-shrink-0 border-r border-zinc-800 bg-surface md:block">
+      <aside className="hidden w-64 flex-shrink-0 border-r border-zinc-800 bg-surface md:block print:hidden">
         <div className="flex h-full flex-col px-4 py-6">
           <div className="px-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -85,7 +88,7 @@ export function AppShell({
         </div>
       </aside>
       <main className="flex-1">
-        <div className="border-b border-zinc-800 bg-surface/80 px-6 py-4 backdrop-blur md:hidden">
+        <div className="border-b border-zinc-800 bg-surface/80 px-6 py-4 backdrop-blur md:hidden print:hidden">
           <div className="text-sm font-semibold text-zinc-100">NEXORA</div>
         </div>
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</div>

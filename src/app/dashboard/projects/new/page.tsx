@@ -10,6 +10,11 @@ import { isNonEmptyString } from "@/lib/validation";
 import type { ProjectStatus } from "@/types/database";
 
 export default async function NewProjectPage() {
+  const { isDemoMode } = await import("@/lib/demo/mode");
+  if (isDemoMode()) {
+    redirect("/dashboard/projects");
+  }
+
   const { session, tenantId } = await requireDashboardSession();
 
   if (session.profile.role !== "employer" || tenantId === null) {

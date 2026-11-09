@@ -59,17 +59,28 @@ export type ProjectPhotoRow = {
   created_at: string;
 };
 
+export type ClientRow = {
+  id: string;
+  tenant_id: string;
+  company_name: string;
+  contact_person: string | null;
+  email: string;
+  phone: string | null;
+  address: string;
+  notes: string | null;
+  created_at: string;
+};
+
 export type QuoteRow = {
   id: string;
   tenant_id: string;
   quote_number: string;
   client_id: string | null;
   client_name: string;
-  client_email: string;
   status: QuoteStatus;
-  total_amount_excl_vat: number;
-  vat_percentage: number;
-  total_amount_incl_vat: number;
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
   valid_until: string | null;
   created_at: string;
 };
@@ -89,8 +100,8 @@ export type InvoiceRow = {
   invoice_number: string;
   project_id: string | null;
   quote_id: string | null;
+  client_id: string | null;
   client_name: string;
-  client_email: string;
   status: InvoiceStatus;
   subtotal: number;
   vat_amount: number;
@@ -108,21 +119,33 @@ export type InvoiceItemRow = {
   total_price: number;
 };
 
+export type ProjectScheduleRow = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  assigned_user_id: string;
+  scheduled_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+type Rel = {
+  foreignKeyName: string;
+  columns: string[];
+  isOneToOne: boolean;
+  referencedRelation: string;
+  referencedColumns: string[];
+};
+
 export type Database = {
   public: {
     Tables: {
       tenants: {
         Row: TenantRow;
-        Insert: {
-          id?: string;
-          name: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          created_at?: string;
-        };
+        Insert: { id?: string; name: string; created_at?: string };
+        Update: { id?: string; name?: string; created_at?: string };
         Relationships: [];
       };
       profiles: {
@@ -143,15 +166,7 @@ export type Database = {
           phone?: string | null;
           created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "profiles_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
       };
       projects: {
         Row: ProjectRow;
@@ -173,15 +188,7 @@ export type Database = {
           status?: ProjectStatus;
           created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "projects_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
       };
       time_entries: {
         Row: TimeEntryRow;
@@ -207,29 +214,7 @@ export type Database = {
           notes?: string | null;
           status?: TimeEntryStatus;
         };
-        Relationships: [
-          {
-            foreignKeyName: "time_entries_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "time_entries_user_id_fkey";
-            columns: ["user_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "time_entries_project_id_fkey";
-            columns: ["project_id"];
-            isOneToOne: false;
-            referencedRelation: "projects";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
       };
       project_photos: {
         Row: ProjectPhotoRow;
@@ -251,29 +236,33 @@ export type Database = {
           caption?: string | null;
           created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "project_photos_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "project_photos_project_id_fkey";
-            columns: ["project_id"];
-            isOneToOne: false;
-            referencedRelation: "projects";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "project_photos_user_id_fkey";
-            columns: ["user_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
+      };
+      clients: {
+        Row: ClientRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          company_name: string;
+          contact_person?: string | null;
+          email: string;
+          phone?: string | null;
+          address: string;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          company_name?: string;
+          contact_person?: string | null;
+          email?: string;
+          phone?: string | null;
+          address?: string;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
       };
       quotes: {
         Row: QuoteRow;
@@ -283,11 +272,10 @@ export type Database = {
           quote_number: string;
           client_id?: string | null;
           client_name: string;
-          client_email: string;
           status?: QuoteStatus;
-          total_amount_excl_vat?: number;
-          vat_percentage?: number;
-          total_amount_incl_vat?: number;
+          subtotal?: number;
+          vat_amount?: number;
+          total_amount?: number;
           valid_until?: string | null;
           created_at?: string;
         };
@@ -297,23 +285,14 @@ export type Database = {
           quote_number?: string;
           client_id?: string | null;
           client_name?: string;
-          client_email?: string;
           status?: QuoteStatus;
-          total_amount_excl_vat?: number;
-          vat_percentage?: number;
-          total_amount_incl_vat?: number;
+          subtotal?: number;
+          vat_amount?: number;
+          total_amount?: number;
           valid_until?: string | null;
           created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "quotes_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
       };
       quote_items: {
         Row: QuoteItemRow;
@@ -333,15 +312,7 @@ export type Database = {
           unit_price?: number;
           total_price?: number;
         };
-        Relationships: [
-          {
-            foreignKeyName: "quote_items_quote_id_fkey";
-            columns: ["quote_id"];
-            isOneToOne: false;
-            referencedRelation: "quotes";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
       };
       invoices: {
         Row: InvoiceRow;
@@ -351,8 +322,8 @@ export type Database = {
           invoice_number: string;
           project_id?: string | null;
           quote_id?: string | null;
+          client_id?: string | null;
           client_name: string;
-          client_email: string;
           status?: InvoiceStatus;
           subtotal?: number;
           vat_amount?: number;
@@ -366,8 +337,8 @@ export type Database = {
           invoice_number?: string;
           project_id?: string | null;
           quote_id?: string | null;
+          client_id?: string | null;
           client_name?: string;
-          client_email?: string;
           status?: InvoiceStatus;
           subtotal?: number;
           vat_amount?: number;
@@ -375,29 +346,7 @@ export type Database = {
           due_date?: string;
           created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "invoices_tenant_id_fkey";
-            columns: ["tenant_id"];
-            isOneToOne: false;
-            referencedRelation: "tenants";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "invoices_project_id_fkey";
-            columns: ["project_id"];
-            isOneToOne: false;
-            referencedRelation: "projects";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "invoices_quote_id_fkey";
-            columns: ["quote_id"];
-            isOneToOne: false;
-            referencedRelation: "quotes";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
       };
       invoice_items: {
         Row: InvoiceItemRow;
@@ -417,28 +366,38 @@ export type Database = {
           unit_price?: number;
           total_price?: number;
         };
-        Relationships: [
-          {
-            foreignKeyName: "invoice_items_invoice_id_fkey";
-            columns: ["invoice_id"];
-            isOneToOne: false;
-            referencedRelation: "invoices";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: Rel[];
+      };
+      project_schedules: {
+        Row: ProjectScheduleRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          project_id: string;
+          assigned_user_id: string;
+          scheduled_date: string;
+          start_time?: string | null;
+          end_time?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          project_id?: string;
+          assigned_user_id?: string;
+          scheduled_date?: string;
+          start_time?: string | null;
+          end_time?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
       };
     };
-    Views: {
-      [_ in never]: never;
-    };
-    Functions: {
-      [_ in never]: never;
-    };
-    Enums: {
-      [_ in never]: never;
-    };
-    CompositeTypes: {
-      [_ in never]: never;
-    };
+    Views: { [_ in never]: never };
+    Functions: { [_ in never]: never };
+    Enums: { [_ in never]: never };
+    CompositeTypes: { [_ in never]: never };
   };
 };

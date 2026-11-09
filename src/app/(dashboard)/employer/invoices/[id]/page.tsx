@@ -1,72 +1,37 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  markInvoiceAsPaidFormAction,
-  markInvoiceAsSentFormAction,
-} from "@/app/actions/billing";
+import { getInvoiceBundle, markInvoiceStatusFormAction } from "@/app/actions/crm_billing";
 import { InvoiceStatusBadge } from "@/components/billing/StatusBadge";
 import { PrintButton } from "@/components/billing/PrintButton";
 import { Button } from "@/components/ui/Button";
-import { requireEmployerSession } from "@/lib/auth/require-user";
 import { formatDateTime } from "@/lib/format";
 import { formatEuro } from "@/lib/money";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/validation";
-import type { InvoiceItemRow, InvoiceRow, InvoiceStatus, TenantRow } from "@/types/database";
+import type { InvoiceStatus } from "@/types/database";
 
 type PageProps = {
   params: { id: string };
   searchParams: Record<string, string | string[] | undefined>;
 };
 
-function resolveDisplayStatus(invoice: InvoiceRow, today: string): InvoiceStatus {
-  if (invoice.status === "paid") {
-    return "paid";
-  }
-  if (invoice.status === "draft") {
-    return "draft";
-  }
-  if (invoice.due_date < today) {
-    return "overdue";
-  }
-  return invoice.status === "overdue" ? "overdue" : "sent";
+function resolveStatus(status: InvoiceStatus, dueDate: string): InvoiceStatus {
+  if (status === "paid" || status === "draft") return status;
+  const today = new Date().toISOString().slice(0, 10);
+  return dueDate < today ? "overdue" : status === "overdue" ? "overdue" : "sent";
 }
 
 export default async function InvoiceDetailPage({ params, searchParams }: PageProps) {
-  const { tenantId } = await requireEmployerSession();
-
   if (!isUuid(params.id)) {
     notFound();
   }
 
-  const supabase = createSupabaseServerClient();
-
-  const [{ data: invoiceData }, { data: itemsData }, { data: tenantData }] = await Promise.all([
-    supabase
-      .from("invoices")
-      .select("*")
-      .eq("id", params.id)
-      .eq("tenant_id", tenantId)
-      .maybeSingle(),
-    supabase.from("invoice_items").select("*").eq("invoice_id", params.id),
-    supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle(),
-  ]);
-
-  if (invoiceData === null) {
+  const bundle = await getInvoiceBundle(params.id);
+  if (bundle === null) {
     notFound();
   }
 
-  const invoice = invoiceData as InvoiceRow;
-  const items = (itemsData ?? []) as InvoiceItemRow[];
-  const tenant = (tenantData as TenantRow | null) ?? null;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const displayStatus = resolveDisplayStatus(invoice, today);
-
-  const paid = searchParams["paid"] === "1";
-  const sent = searchParams["sent"] === "1";
-  const errorParam = searchParams["error"];
-  const error = typeof errorParam === "string" ? errorParam : undefined;
+  const { invoice, items, tenantName } = bundle;
+  const displayStatus = resolveStatus(invoice.status, invoice.due_date);
 
   return (
     <div className="space-y-6">
@@ -82,36 +47,34 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
         </div>
         <div className="flex flex-wrap gap-2">
           <PrintButton />
+          <Link
+            href={`/employer/invoices/${invoice.id}/print`}
+            className="inline-flex items-center justify-center rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-zinc-500"
+          >
+            Printweergave
+          </Link>
           {invoice.status === "draft" ? (
-            <form action={markInvoiceAsSentFormAction}>
+            <form action={markInvoiceStatusFormAction}>
               <input type="hidden" name="invoice_id" value={invoice.id} />
+              <input type="hidden" name="status" value="sent" />
               <Button type="submit" variant="secondary">
-                Markeer als verzonden
+                Markeer verzonden
               </Button>
             </form>
           ) : null}
           {invoice.status !== "paid" ? (
-            <form action={markInvoiceAsPaidFormAction}>
+            <form action={markInvoiceStatusFormAction}>
               <input type="hidden" name="invoice_id" value={invoice.id} />
-              <Button type="submit">Markeer als betaald</Button>
+              <input type="hidden" name="status" value="paid" />
+              <Button type="submit">Markeer betaald</Button>
             </form>
           ) : null}
         </div>
       </div>
 
-      {paid ? (
+      {searchParams["updated"] === "1" ? (
         <div className="rounded-md border border-emerald-900 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200 print:hidden">
-          Factuur gemarkeerd als betaald.
-        </div>
-      ) : null}
-      {sent ? (
-        <div className="rounded-md border border-emerald-900 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200 print:hidden">
-          Factuur gemarkeerd als verzonden.
-        </div>
-      ) : null}
-      {error !== undefined ? (
-        <div className="rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200 print:hidden">
-          Actie mislukt ({error}).
+          Status bijgewerkt.
         </div>
       ) : null}
 
@@ -123,7 +86,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
                 NEXORA
               </div>
               <div className="mt-1 text-2xl font-semibold">Business OS</div>
-              <div className="mt-2 text-sm text-zinc-300">{tenant?.name ?? "Organisatie"}</div>
+              <div className="mt-2 text-sm text-zinc-300">{tenantName}</div>
             </div>
             <div className="text-right">
               <div className="text-sm uppercase tracking-wide text-zinc-400">Factuur</div>
@@ -141,7 +104,6 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
               Factuur aan
             </div>
             <div className="mt-2 text-base font-semibold">{invoice.client_name}</div>
-            <div className="text-sm text-zinc-600">{invoice.client_email}</div>
           </div>
           <div className="sm:text-right">
             <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -150,9 +112,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
             <div className="mt-2 text-sm">
               Vervaldatum: <span className="font-medium">{invoice.due_date}</span>
             </div>
-            <div className="mt-1 text-sm">
-              Status: <span className="font-medium capitalize">{displayStatus}</span>
-            </div>
+            <div className="mt-1 text-sm capitalize">Status: {displayStatus}</div>
           </div>
         </div>
 
@@ -180,10 +140,6 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
             </tbody>
           </table>
 
-          {items.length === 0 ? (
-            <div className="py-6 text-sm text-zinc-500">Geen factuurregels.</div>
-          ) : null}
-
           <div className="mt-6 ml-auto w-full max-w-xs space-y-2 text-sm">
             <div className="flex justify-between text-zinc-600">
               <span>Subtotaal</span>
@@ -197,10 +153,6 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
               <span>Totaal</span>
               <span>{formatEuro(Number(invoice.total_amount))}</span>
             </div>
-          </div>
-
-          <div className="mt-10 border-t border-zinc-200 pt-4 text-xs text-zinc-500">
-            Gegenereerd via NEXORA Business OS · Bewaar dit document voor uw administratie.
           </div>
         </div>
       </article>

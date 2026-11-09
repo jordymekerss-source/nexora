@@ -6,6 +6,31 @@ import { Card } from "@/components/ui/Card";
 import type { ProjectRow } from "@/types/database";
 
 export default async function ProjectsListPage() {
+  const { isDemoMode } = await import("@/lib/demo/mode");
+  if (isDemoMode()) {
+    const { readDemoStore, seedDemoStoreIfEmpty } = await import("@/lib/demo/store");
+    await seedDemoStoreIfEmpty(false);
+    const store = await readDemoStore();
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-semibold text-zinc-50">Projects</h1>
+        <Card className="overflow-hidden p-0">
+          <div className="divide-y divide-zinc-900">
+            {store.projects.map((project) => (
+              <div key={project.id} className="flex items-center justify-between px-4 py-3 text-sm">
+                <div>
+                  <div className="font-medium text-zinc-100">{project.title}</div>
+                  <div className="text-zinc-500">{project.client_name ?? "—"}</div>
+                </div>
+                <span className="text-xs uppercase text-zinc-500">{project.status}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const { session, tenantId } = await requireDashboardSession();
 
   if (session.profile.role === "super_admin") {

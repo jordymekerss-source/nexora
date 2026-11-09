@@ -1,4 +1,9 @@
 import { redirect } from "next/navigation";
+import {
+  DEMO_EMPLOYER_ID,
+  DEMO_TENANT_ID,
+  isDemoMode,
+} from "@/lib/demo/mode";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ProfileRow, ProfileRole } from "@/types/database";
 
@@ -9,7 +14,29 @@ export type AuthenticatedSession = {
   role: ProfileRole | "none";
 };
 
+function demoEmployerSession(): AuthenticatedSession & { profile: ProfileRow } {
+  const profile: ProfileRow = {
+    id: DEMO_EMPLOYER_ID,
+    tenant_id: DEMO_TENANT_ID,
+    full_name: "Demo Werkgever",
+    role: "employer",
+    phone: "+31 6 1234 5678",
+    created_at: new Date().toISOString(),
+  };
+
+  return {
+    userId: DEMO_EMPLOYER_ID,
+    email: "demo@nexora.local",
+    profile,
+    role: "employer",
+  };
+}
+
 export async function getAuthenticatedSession(): Promise<AuthenticatedSession | null> {
+  if (isDemoMode()) {
+    return demoEmployerSession();
+  }
+
   const supabase = createSupabaseServerClient();
   const {
     data: { user },
@@ -56,6 +83,11 @@ export type DashboardSession =
     };
 
 export async function requireDashboardSession(): Promise<DashboardSession> {
+  if (isDemoMode()) {
+    const session = demoEmployerSession();
+    return { session, tenantId: DEMO_TENANT_ID };
+  }
+
   const session = await requireSession();
 
   if (session.profile === null) {

@@ -11,6 +11,11 @@ type PageProps = {
 };
 
 export default async function LoginPage({ searchParams }: PageProps) {
+  const { isDemoMode } = await import("@/lib/demo/mode");
+  if (isDemoMode()) {
+    redirect("/employer/clients");
+  }
+
   const session = await getAuthenticatedSession();
   if (session !== null) {
     redirect("/dashboard");

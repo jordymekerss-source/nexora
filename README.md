@@ -17,9 +17,21 @@ Multi-tenant ERP for field services, construction, and installation businesses.
 
 ## Setup
 
+### Instant demo (no Supabase required)
+
+```bash
+npm install
+echo 'NEXT_PUBLIC_DEMO_MODE=true' > .env.local
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) — demo mode auto-seeds clients, quotes, invoices and weekly planning. Use **Seed demo data** on the Klanten page to reload sample data.
+
+### Production / Supabase
+
 1. Create a Supabase project.
-2. Run migrations in order from `supabase/migrations/` (SQL Editor or CLI), including Module 2 quotes/invoices.
-3. Copy `.env.example` → `.env.local` and fill in keys.
+2. Run migrations in order from `supabase/migrations/` (SQL Editor or CLI), including CRM/planning.
+3. Copy `.env.example` → `.env.local` and fill in keys (`NEXT_PUBLIC_DEMO_MODE=false`).
 4. In Supabase Auth → URL configuration, allow `NEXT_PUBLIC_SITE_URL` and `/auth/callback`.
 5. Install and run:
 
