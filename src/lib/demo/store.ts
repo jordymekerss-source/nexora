@@ -10,16 +10,21 @@ import { nextInvoiceNumber, nextQuoteNumber } from "@/lib/billing-numbers";
 import { computeVatTotals, lineTotal, roundMoney } from "@/lib/money";
 import type {
   ClientRow,
+  EmployeeCertificateRow,
   InvoiceItemRow,
   InvoiceRow,
   InvoiceStatus,
   ProfileRow,
+  ProjectAssignmentRow,
   ProjectRow,
   ProjectScheduleRow,
   QuoteItemRow,
   QuoteRow,
   QuoteStatus,
   TimeEntryRow,
+  ToolRow,
+  VehicleRow,
+  WorkOrderRow,
 } from "@/types/database";
 
 export type DemoStore = {
@@ -33,6 +38,11 @@ export type DemoStore = {
   invoiceItems: InvoiceItemRow[];
   schedules: ProjectScheduleRow[];
   timeEntries: TimeEntryRow[];
+  assignments: ProjectAssignmentRow[];
+  vehicles: VehicleRow[];
+  tools: ToolRow[];
+  certificates: EmployeeCertificateRow[];
+  workOrders: WorkOrderRow[];
   seededAt: string | null;
 };
 
@@ -87,7 +97,24 @@ function emptyStore(): DemoStore {
     invoiceItems: [],
     schedules: [],
     timeEntries: [],
+    assignments: [],
+    vehicles: [],
+    tools: [],
+    certificates: [],
+    workOrders: [],
     seededAt: null,
+  };
+}
+
+function normalizeStore(raw: DemoStore): DemoStore {
+  return {
+    ...emptyStore(),
+    ...raw,
+    assignments: raw.assignments ?? [],
+    vehicles: raw.vehicles ?? [],
+    tools: raw.tools ?? [],
+    certificates: raw.certificates ?? [],
+    workOrders: raw.workOrders ?? [],
   };
 }
 
@@ -105,7 +132,7 @@ export async function readDemoStore(): Promise<DemoStore> {
 
   try {
     const raw = await fs.readFile(STORE_PATH, "utf8");
-    memoryCache = JSON.parse(raw) as DemoStore;
+    memoryCache = normalizeStore(JSON.parse(raw) as DemoStore);
     return structuredClone(memoryCache);
   } catch {
     memoryCache = emptyStore();
@@ -147,7 +174,12 @@ function ymd(date: Date): string {
 
 export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boolean }> {
   const current = await readDemoStore();
-  if (!force && current.clients.length > 0 && current.seededAt !== null) {
+  const needsOpsSeed =
+    current.assignments.length === 0 ||
+    current.vehicles.length === 0 ||
+    current.tools.length === 0 ||
+    current.certificates.length === 0;
+  if (!force && current.clients.length > 0 && current.seededAt !== null && !needsOpsSeed) {
     return { seeded: false };
   }
 
@@ -394,6 +426,9 @@ export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boo
   const clockOut = new Date(clockIn);
   clockOut.setHours(16, 30, 0, 0);
 
+  const liveClockIn = new Date();
+  liveClockIn.setHours(liveClockIn.getHours() - 2);
+
   const timeEntries: TimeEntryRow[] = [
     {
       id: randomUUID(),
@@ -417,6 +452,155 @@ export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boo
       notes: null,
       status: "approved",
     },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      user_id: DEMO_EMPLOYEE_IDS[0]!,
+      project_id: projectA.id,
+      clock_in: liveClockIn.toISOString(),
+      clock_out: null,
+      break_minutes: 0,
+      notes: "Actief op locatie",
+      status: "pending",
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      user_id: DEMO_EMPLOYEE_IDS[2]!,
+      project_id: projectA.id,
+      clock_in: new Date(liveClockIn.getTime() - 45 * 60000).toISOString(),
+      clock_out: null,
+      break_minutes: 0,
+      notes: "Tweede monteur",
+      status: "pending",
+    },
+  ];
+
+  const assignments: ProjectAssignmentRow[] = [
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      project_id: projectA.id,
+      user_id: DEMO_EMPLOYEE_IDS[0]!,
+      assigned_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      project_id: projectA.id,
+      user_id: DEMO_EMPLOYEE_IDS[1]!,
+      assigned_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      project_id: projectA.id,
+      user_id: DEMO_EMPLOYEE_IDS[2]!,
+      assigned_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      project_id: projectB.id,
+      user_id: DEMO_EMPLOYEE_IDS[1]!,
+      assigned_at: createdAt,
+    },
+  ];
+
+  const vehicles: VehicleRow[] = [
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      license_plate: "V-123-NX",
+      brand_model: "Volkswagen Transporter",
+      apk_expiry_date: ymd(new Date(Date.now() + 1000 * 60 * 60 * 24 * 40)),
+      km_status: 87450,
+      assigned_user_id: DEMO_EMPLOYEE_IDS[0]!,
+      created_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      license_plate: "V-456-NX",
+      brand_model: "Mercedes Sprinter",
+      apk_expiry_date: ymd(new Date(Date.now() - 1000 * 60 * 60 * 24 * 5)),
+      km_status: 152300,
+      assigned_user_id: DEMO_EMPLOYEE_IDS[1]!,
+      created_at: createdAt,
+    },
+  ];
+
+  const tools: ToolRow[] = [
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      name: "Bosch klopboormachine",
+      serial_number: "BSH-99821",
+      status: "active",
+      checked_out_to_user_id: DEMO_EMPLOYEE_IDS[0]!,
+      created_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      name: "Laser waterpas",
+      serial_number: "LVL-4412",
+      status: "active",
+      checked_out_to_user_id: DEMO_EMPLOYEE_IDS[2]!,
+      created_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      name: "Kabeltrekker set",
+      serial_number: "KT-17",
+      status: "maintenance",
+      checked_out_to_user_id: null,
+      created_at: createdAt,
+    },
+  ];
+
+  const certificates: EmployeeCertificateRow[] = [
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      user_id: DEMO_EMPLOYEE_IDS[0]!,
+      certificate_name: "VCA Basis",
+      expiry_date: ymd(new Date(Date.now() + 1000 * 60 * 60 * 24 * 20)),
+      document_url: null,
+      created_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      user_id: DEMO_EMPLOYEE_IDS[1]!,
+      certificate_name: "Rijbewijs BE",
+      expiry_date: ymd(new Date(Date.now() + 1000 * 60 * 60 * 24 * 400)),
+      document_url: null,
+      created_at: createdAt,
+    },
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      user_id: DEMO_EMPLOYEE_IDS[2]!,
+      certificate_name: "VCA VOL",
+      expiry_date: ymd(new Date(Date.now() - 1000 * 60 * 60 * 24 * 3)),
+      document_url: null,
+      created_at: createdAt,
+    },
+  ];
+
+  const workOrders: WorkOrderRow[] = [
+    {
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      project_id: projectA.id,
+      client_signature_url: null,
+      work_summary: "LED armaturen geplaatst in showroomzone A.",
+      completed_at: null,
+      created_at: createdAt,
+      created_by: DEMO_EMPLOYEE_IDS[0]!,
+    },
   ];
 
   await persistDemoStore({
@@ -430,6 +614,11 @@ export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boo
     invoiceItems,
     schedules,
     timeEntries,
+    assignments,
+    vehicles,
+    tools,
+    certificates,
+    workOrders,
     seededAt: createdAt,
   });
 

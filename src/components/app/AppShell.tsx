@@ -4,11 +4,14 @@ import {
   CalendarDays,
   FileText,
   FolderKanban,
+  HardHat,
   LayoutDashboard,
   LogOut,
   Receipt,
   Timer,
+  Truck,
   Users,
+  Wrench,
 } from "lucide-react";
 import type { ProfileRole } from "@/types/database";
 
@@ -23,11 +26,14 @@ function navForRole(role: ProfileRole): readonly NavItem[] {
   if (role === "employer") {
     return [
       ...base,
-      { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+      { href: "/employer/projects", label: "Projecten", icon: FolderKanban },
       { href: "/employer/clients", label: "Klanten", icon: Users },
       { href: "/employer/quotes", label: "Offertes", icon: FileText },
       { href: "/employer/invoices", label: "Facturen", icon: Receipt },
       { href: "/employer/planning", label: "Planning", icon: CalendarDays },
+      { href: "/employer/fleet", label: "Wagenpark", icon: Truck },
+      { href: "/employer/tools", label: "Gereedschap", icon: Wrench },
+      { href: "/employer/hr", label: "HR & Certificaten", icon: HardHat },
       { href: "/dashboard/team", label: "Team", icon: Users },
     ];
   }
@@ -40,7 +46,11 @@ function navForRole(role: ProfileRole): readonly NavItem[] {
     ];
   }
 
-  return [...base, { href: "/dashboard/projects", label: "Projects", icon: FolderKanban }];
+  return [
+    ...base,
+    { href: "/employee", label: "Inklokken", icon: Timer },
+    { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+  ];
 }
 
 export function AppShell({

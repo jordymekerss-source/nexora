@@ -1,8 +1,19 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CalendarDays, FileText, Receipt, Users } from "lucide-react";
+import {
+  CalendarDays,
+  FileText,
+  FolderKanban,
+  HardHat,
+  Receipt,
+  Truck,
+  Users,
+  Wrench,
+} from "lucide-react";
+import { PersonaSwitcher } from "@/components/demo/PersonaSwitcher";
 import { requireEmployerSession } from "@/lib/auth/require-user";
 import { isDemoMode } from "@/lib/demo/mode";
+import { getDemoPersonaFromCookies } from "@/lib/demo/persona";
 import { seedDemoStoreIfEmpty } from "@/lib/demo/store";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +23,10 @@ const employerLinks = [
   { href: "/employer/quotes", label: "Offertes", icon: FileText },
   { href: "/employer/invoices", label: "Facturen", icon: Receipt },
   { href: "/employer/planning", label: "Planning", icon: CalendarDays },
+  { href: "/employer/projects", label: "Projecten", icon: FolderKanban },
+  { href: "/employer/fleet", label: "Wagenpark", icon: Truck },
+  { href: "/employer/tools", label: "Gereedschap", icon: Wrench },
+  { href: "/employer/hr", label: "HR & Certificaten", icon: HardHat },
 ] as const;
 
 export default async function EmployerOnlyLayout({ children }: { children: ReactNode }) {
@@ -38,6 +53,14 @@ export default async function EmployerOnlyLayout({ children }: { children: React
           );
         })}
       </div>
+      {isDemoMode() ? (
+        <div className="print:hidden rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+            Demo · wissel naar medewerker voor inklokken
+          </div>
+          <PersonaSwitcher current={getDemoPersonaFromCookies()} />
+        </div>
+      ) : null}
       {children}
     </div>
   );

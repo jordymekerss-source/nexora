@@ -24,6 +24,16 @@ export function formatDateTime(iso: string): string {
   }).format(date);
 }
 
+export function formatDate(iso: string): string {
+  const date = new Date(iso.includes("T") ? iso : `${iso}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).format(date);
+}
+
 export function formatDurationMinutes(totalMinutes: number): string {
   if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
     return "0m";

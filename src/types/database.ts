@@ -131,6 +131,58 @@ export type ProjectScheduleRow = {
   created_at: string;
 };
 
+export type ProjectAssignmentRow = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  user_id: string;
+  assigned_at: string;
+};
+
+export type VehicleRow = {
+  id: string;
+  tenant_id: string;
+  license_plate: string;
+  brand_model: string;
+  apk_expiry_date: string | null;
+  km_status: number;
+  assigned_user_id: string | null;
+  created_at: string;
+};
+
+export type ToolStatus = "active" | "maintenance" | "broken";
+
+export type ToolRow = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  serial_number: string | null;
+  status: ToolStatus;
+  checked_out_to_user_id: string | null;
+  created_at: string;
+};
+
+export type EmployeeCertificateRow = {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  certificate_name: string;
+  expiry_date: string;
+  document_url: string | null;
+  created_at: string;
+};
+
+export type WorkOrderRow = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  client_signature_url: string | null;
+  work_summary: string;
+  completed_at: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
 type Rel = {
   foreignKeyName: string;
   columns: string[];
@@ -391,6 +443,116 @@ export type Database = {
           end_time?: string | null;
           notes?: string | null;
           created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      project_assignments: {
+        Row: ProjectAssignmentRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          project_id: string;
+          user_id: string;
+          assigned_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          project_id?: string;
+          user_id?: string;
+          assigned_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      vehicles: {
+        Row: VehicleRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          license_plate: string;
+          brand_model: string;
+          apk_expiry_date?: string | null;
+          km_status?: number;
+          assigned_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          license_plate?: string;
+          brand_model?: string;
+          apk_expiry_date?: string | null;
+          km_status?: number;
+          assigned_user_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      tools: {
+        Row: ToolRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          name: string;
+          serial_number?: string | null;
+          status?: ToolStatus;
+          checked_out_to_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          name?: string;
+          serial_number?: string | null;
+          status?: ToolStatus;
+          checked_out_to_user_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      employee_certificates: {
+        Row: EmployeeCertificateRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          user_id: string;
+          certificate_name: string;
+          expiry_date: string;
+          document_url?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          user_id?: string;
+          certificate_name?: string;
+          expiry_date?: string;
+          document_url?: string | null;
+          created_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      work_orders: {
+        Row: WorkOrderRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          project_id: string;
+          client_signature_url?: string | null;
+          work_summary?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          project_id?: string;
+          client_signature_url?: string | null;
+          work_summary?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
         };
         Relationships: Rel[];
       };

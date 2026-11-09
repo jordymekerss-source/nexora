@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
+import { DEMO_TENANT_ID, isDemoMode } from "@/lib/demo/mode";
 import {
-  DEMO_EMPLOYER_ID,
-  DEMO_TENANT_ID,
-  isDemoMode,
-} from "@/lib/demo/mode";
+  demoEmailForPersona,
+  getDemoPersonaFromCookies,
+  getDemoProfileForPersona,
+} from "@/lib/demo/persona";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ProfileRow, ProfileRole } from "@/types/database";
 
@@ -14,27 +15,20 @@ export type AuthenticatedSession = {
   role: ProfileRole | "none";
 };
 
-function demoEmployerSession(): AuthenticatedSession & { profile: ProfileRow } {
-  const profile: ProfileRow = {
-    id: DEMO_EMPLOYER_ID,
-    tenant_id: DEMO_TENANT_ID,
-    full_name: "Demo Werkgever",
-    role: "employer",
-    phone: "+31 6 1234 5678",
-    created_at: new Date().toISOString(),
-  };
-
+function demoSessionFromCookies(): AuthenticatedSession & { profile: ProfileRow } {
+  const persona = getDemoPersonaFromCookies();
+  const profile = getDemoProfileForPersona(persona);
   return {
-    userId: DEMO_EMPLOYER_ID,
-    email: "demo@nexora.local",
+    userId: profile.id,
+    email: demoEmailForPersona(persona),
     profile,
-    role: "employer",
+    role: profile.role,
   };
 }
 
 export async function getAuthenticatedSession(): Promise<AuthenticatedSession | null> {
   if (isDemoMode()) {
-    return demoEmployerSession();
+    return demoSessionFromCookies();
   }
 
   const supabase = createSupabaseServerClient();
@@ -84,7 +78,7 @@ export type DashboardSession =
 
 export async function requireDashboardSession(): Promise<DashboardSession> {
   if (isDemoMode()) {
-    const session = demoEmployerSession();
+    const session = demoSessionFromCookies();
     return { session, tenantId: DEMO_TENANT_ID };
   }
 
@@ -117,6 +111,22 @@ export async function requireEmployerSession(): Promise<{
   const ctx = await requireDashboardSession();
 
   if (ctx.session.profile.role !== "employer" || ctx.tenantId === null) {
+    redirect("/dashboard");
+  }
+
+  return {
+    session: ctx.session,
+    tenantId: ctx.tenantId,
+  };
+}
+
+export async function requireEmployeeSession(): Promise<{
+  session: AuthenticatedSession & { profile: ProfileRow };
+  tenantId: string;
+}> {
+  const ctx = await requireDashboardSession();
+
+  if (ctx.session.profile.role !== "employee" || ctx.tenantId === null) {
     redirect("/dashboard");
   }
 
