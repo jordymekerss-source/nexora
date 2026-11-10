@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type ProfileRole = "super_admin" | "employer" | "employee";
+export type ProfileRole = "super_admin" | "employer" | "employee" | "accountant";
 export type ProjectStatus = "planning" | "active" | "completed";
 export type TimeEntryStatus = "pending" | "approved";
 export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
@@ -16,6 +16,8 @@ export type TenantRow = {
   id: string;
   name: string;
   created_at: string;
+  storage_quota_bytes: number | null;
+  subscription_tier: "basic" | "professional" | "enterprise" | "custom";
 };
 
 export type ProfileRow = {
@@ -239,6 +241,161 @@ export type TenantInviteRow = {
   created_at: string;
 };
 
+export type FeatureEntitlementRow = {
+  id: string;
+  tenant_id: string;
+  feature_key: string;
+  enabled: boolean;
+  trial_ends_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DocumentCategory =
+  | "photo"
+  | "document"
+  | "spreadsheet"
+  | "video"
+  | "audio"
+  | "zip"
+  | "other";
+
+export type DocumentRow = {
+  id: string;
+  tenant_id: string;
+  module_key: string;
+  category: DocumentCategory;
+  title: string;
+  description: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  current_version_id: string | null;
+  byte_size: number;
+  content_type: string | null;
+  soft_deleted_at: string | null;
+  purge_after: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DocumentVersionRow = {
+  id: string;
+  tenant_id: string;
+  document_id: string;
+  version_number: number;
+  storage_bucket: string;
+  storage_path: string;
+  content_type: string;
+  byte_size: number;
+  sha256: string | null;
+  original_filename: string;
+  uploaded_by: string | null;
+  created_at: string;
+};
+
+export type UploadSessionRow = {
+  id: string;
+  tenant_id: string;
+  document_id: string | null;
+  module_key: string;
+  category: DocumentCategory;
+  declared_content_type: string;
+  declared_byte_size: number;
+  original_filename: string;
+  status: "pending" | "uploaded" | "verified" | "rejected" | "expired";
+  storage_path: string | null;
+  created_by: string;
+  expires_at: string;
+  completed_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+};
+
+export type StorageUsageRow = {
+  tenant_id: string;
+  used_bytes: number;
+  photo_bytes: number;
+  document_bytes: number;
+  spreadsheet_bytes: number;
+  video_bytes: number;
+  audio_bytes: number;
+  zip_bytes: number;
+  other_bytes: number;
+  updated_at: string;
+};
+
+export type AccountantAccessGrantRow = {
+  id: string;
+  client_tenant_id: string;
+  accountant_user_id: string;
+  invited_by: string;
+  scopes: string[];
+  period_from: string | null;
+  period_to: string | null;
+  status: "pending" | "active" | "revoked" | "expired";
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AccountingPeriodStatus =
+  | "in_progress"
+  | "awaiting_missing_info"
+  | "ready_for_review"
+  | "approved_by_owner"
+  | "handed_over"
+  | "in_review_by_accountant"
+  | "returned_for_correction"
+  | "processed_by_accountant";
+
+export type AccountingPeriodRow = {
+  id: string;
+  tenant_id: string;
+  label: string;
+  period_type: "month" | "quarter" | "year" | "custom";
+  starts_on: string;
+  ends_on: string;
+  status: AccountingPeriodStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AccountingPeriodPackRow = {
+  id: string;
+  tenant_id: string;
+  period_id: string;
+  version_number: number;
+  status: "draft" | "sealed" | "handed_over" | "superseded";
+  manifest: Json;
+  checklist: Json;
+  export_document_id: string | null;
+  sealed_at: string | null;
+  handed_over_at: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type DomainOutboxRow = {
+  id: string;
+  tenant_id: string;
+  event_type: string;
+  event_version: number;
+  aggregate_type: string;
+  aggregate_id: string | null;
+  payload: Json;
+  idempotency_key: string;
+  status: "pending" | "processing" | "processed" | "failed" | "dead";
+  attempts: number;
+  available_at: string;
+  processed_at: string | null;
+  last_error: string | null;
+  created_at: string;
+};
+
 type Rel = {
   foreignKeyName: string;
   columns: string[];
@@ -252,8 +409,20 @@ export type Database = {
     Tables: {
       tenants: {
         Row: TenantRow;
-        Insert: { id?: string; name: string; created_at?: string };
-        Update: { id?: string; name?: string; created_at?: string };
+        Insert: {
+          id?: string;
+          name: string;
+          created_at?: string;
+          storage_quota_bytes?: number | null;
+          subscription_tier?: TenantRow["subscription_tier"];
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          created_at?: string;
+          storage_quota_bytes?: number | null;
+          subscription_tier?: TenantRow["subscription_tier"];
+        };
         Relationships: [];
       };
       profiles: {
@@ -732,6 +901,187 @@ export type Database = {
           consumed_at?: string | null;
           created_at?: string;
         };
+        Relationships: Rel[];
+      };
+      feature_entitlements: {
+        Row: FeatureEntitlementRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          feature_key: string;
+          enabled?: boolean;
+          trial_ends_at?: string | null;
+          expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          feature_key?: string;
+          enabled?: boolean;
+          trial_ends_at?: string | null;
+          expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: Rel[];
+      };
+      documents: {
+        Row: DocumentRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          module_key: string;
+          category: DocumentCategory;
+          title: string;
+          description?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          current_version_id?: string | null;
+          byte_size?: number;
+          content_type?: string | null;
+          soft_deleted_at?: string | null;
+          purge_after?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<DocumentRow>;
+        Relationships: Rel[];
+      };
+      document_versions: {
+        Row: DocumentVersionRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          document_id: string;
+          version_number: number;
+          storage_bucket?: string;
+          storage_path: string;
+          content_type: string;
+          byte_size: number;
+          sha256?: string | null;
+          original_filename: string;
+          uploaded_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<DocumentVersionRow>;
+        Relationships: Rel[];
+      };
+      upload_sessions: {
+        Row: UploadSessionRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          document_id?: string | null;
+          module_key: string;
+          category: DocumentCategory;
+          declared_content_type: string;
+          declared_byte_size: number;
+          original_filename: string;
+          status?: UploadSessionRow["status"];
+          storage_path?: string | null;
+          created_by: string;
+          expires_at: string;
+          completed_at?: string | null;
+          rejection_reason?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<UploadSessionRow>;
+        Relationships: Rel[];
+      };
+      storage_usage: {
+        Row: StorageUsageRow;
+        Insert: {
+          tenant_id: string;
+          used_bytes?: number;
+          photo_bytes?: number;
+          document_bytes?: number;
+          spreadsheet_bytes?: number;
+          video_bytes?: number;
+          audio_bytes?: number;
+          zip_bytes?: number;
+          other_bytes?: number;
+          updated_at?: string;
+        };
+        Update: Partial<StorageUsageRow>;
+        Relationships: Rel[];
+      };
+      accountant_access_grants: {
+        Row: AccountantAccessGrantRow;
+        Insert: {
+          id?: string;
+          client_tenant_id: string;
+          accountant_user_id: string;
+          invited_by: string;
+          scopes?: string[];
+          period_from?: string | null;
+          period_to?: string | null;
+          status?: AccountantAccessGrantRow["status"];
+          accepted_at?: string | null;
+          revoked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<AccountantAccessGrantRow>;
+        Relationships: Rel[];
+      };
+      accounting_periods: {
+        Row: AccountingPeriodRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          label: string;
+          period_type: AccountingPeriodRow["period_type"];
+          starts_on: string;
+          ends_on: string;
+          status?: AccountingPeriodStatus;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<AccountingPeriodRow>;
+        Relationships: Rel[];
+      };
+      accounting_period_packs: {
+        Row: AccountingPeriodPackRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          period_id: string;
+          version_number: number;
+          status?: AccountingPeriodPackRow["status"];
+          manifest?: Json;
+          checklist?: Json;
+          export_document_id?: string | null;
+          sealed_at?: string | null;
+          handed_over_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<AccountingPeriodPackRow>;
+        Relationships: Rel[];
+      };
+      domain_outbox: {
+        Row: DomainOutboxRow;
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          event_type: string;
+          event_version?: number;
+          aggregate_type: string;
+          aggregate_id?: string | null;
+          payload?: Json;
+          idempotency_key: string;
+          status?: DomainOutboxRow["status"];
+          attempts?: number;
+          available_at?: string;
+          processed_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<DomainOutboxRow>;
         Relationships: Rel[];
       };
     };

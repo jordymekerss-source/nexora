@@ -1,28 +1,32 @@
 # SESSION_HANDOFF
 
-**Branch:** `cursor/nexora-mvp-stabilize-5233`  
-**Updated:** 2026-11-09 23:55 Europe/Amsterdam
+**Branch:** `cursor/nexora-enterprise-phase1-5233`  
+**Updated:** 2026-11-11 00:15 Europe/Amsterdam
 
-## Resume
+## Resume checklist
 
-1. Read `docs/SECURITY_AUDIT.md`, `docs/BUILD_STATUS.md`, this file
-2. `git status` / `git log -5`
-3. `npm test && npm run typecheck && npm run build`
-4. Continue: live Supabase wiring + Tenant A/B tests when credentials available
+1. Read `docs/FOUNDATION_GATE.md`, `docs/BUILD_STATUS.md`, this file  
+2. `git status` / `git log -5`  
+3. `npm test && npm run typecheck && npm run build`  
+4. Do **not** mark ERP modules complete until live RLS is proven  
 
-## Done in stabilize pass
+## Done this session
 
-- Middleware route ACL (live)
-- Runtime fail-closed without Supabase in live mode
-- Employer-only public signup
-- Entitlement gates on CRM/billing/planning/time/fleet/tools/HR
-- Cent-backed money helpers used by billing math
-- Time validation + employer correction history (demo)
-- Migrations: document sequences + storage select tighten
-- Security/architecture/test docs
+- Foundation gate documented (live RLS still blocked)  
+- Requirements matrix + master/module specs  
+- Phase 1 DMS + accountant + outbox migration  
+- Entitlement/feature registry expansion  
+- Unit tests for upload policy, completeness, adapters  
 
 ## Do not
 
-- Claim production-ready without live RLS proof + Next upgrade + HTTPS
-- Blind `npm audit fix --force`
-- Build excluded AI modules
+- Ship fake Exact/Peppol/PSD2 integrations  
+- Claim VCA/fiscal compliance automation  
+- Auto-delete customer data without retention procedure  
+- Add large business UIs on unproven live tenancy  
+
+## Blockers needing operator / credentials
+
+- Supabase project to apply migrations + A/B isolation tests  
+- HTTPS / deployment secrets for demo host  
+- Next.js major upgrade decision  
