@@ -61,9 +61,14 @@ export function parseDemoPersona(value: string | undefined): DemoPersona {
   return "employer";
 }
 
-export function getDemoPersonaFromCookies(): DemoPersona {
+/** Returns null when no demo session cookie is present (logged out). */
+export function getDemoPersonaFromCookies(): DemoPersona | null {
   const cookieStore = cookies();
-  return parseDemoPersona(cookieStore.get(DEMO_PERSONA_COOKIE)?.value);
+  const value = cookieStore.get(DEMO_PERSONA_COOKIE)?.value;
+  if (value === undefined || value.length === 0) {
+    return null;
+  }
+  return parseDemoPersona(value);
 }
 
 export function getDemoProfileForPersona(persona: DemoPersona): ProfileRow {

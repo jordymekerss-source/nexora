@@ -546,50 +546,21 @@ export async function generateInvoiceFromApprovedTimeEntries(
   if (hours <= 0) {
     throw new Error("No approved billable hours.");
   }
-  const line = lineTotal(hours, rate);
-  const totals = computeVatTotals({ exclVat: line, vatPercentage: 21 });
-  const { data: invoiceNumber, error: numberError } = await supabase.rpc("next_document_number", {
-    p_tenant_id: tenantId,
-    p_prefix: "FAC",
-  });
-  if (numberError !== null || typeof invoiceNumber !== "string") {
-    throw new Error(numberError?.message ?? "Failed to allocate invoice number.");
+  const idempotencyKey = `invoice-from-time:${projectId}:${hours}:${rate}`;
+  const { data: invoiceId, error: rpcError } = await supabase.rpc(
+    "create_invoice_from_approved_time",
+    {
+      p_project_id: project.id,
+      p_hourly_rate: rate,
+      p_vat_rate_bps: 2100,
+      p_idempotency_key: idempotencyKey,
+    },
+  );
+  if (rpcError !== null || invoiceId === null || typeof invoiceId !== "string") {
+    throw new Error(rpcError?.message ?? "Failed to create invoice atomically.");
   }
-  const due = new Date();
-  due.setDate(due.getDate() + 30);
-  const { data: invoice, error: invoiceError } = await supabase
-    .from("invoices")
-    .insert({
-      tenant_id: tenantId,
-      invoice_number: invoiceNumber,
-      project_id: project.id,
-      quote_id: null,
-      client_id: null,
-      client_name: project.client_name ?? "Klant",
-      status: "draft",
-      subtotal: totals.exclVat,
-      vat_amount: totals.vatAmount,
-      total_amount: totals.inclVat,
-      due_date: due.toISOString().slice(0, 10),
-    })
-    .select("id")
-    .single();
-  if (invoiceError !== null || invoice === null) {
-    throw new Error(invoiceError?.message ?? "Failed to create invoice.");
-  }
-  const { error: itemError } = await supabase.from("invoice_items").insert({
-    invoice_id: invoice.id,
-    description: `Goedgekeurde uren — ${project.title}`,
-    quantity: hours,
-    unit_price: rate,
-    total_price: line,
-  });
-  if (itemError !== null) {
-    await supabase.from("invoices").delete().eq("id", invoice.id).eq("tenant_id", tenantId);
-    throw new Error(itemError.message);
-  }
-  revalidateCrmPaths([`/employer/invoices/${invoice.id}`]);
-  return { invoiceId: invoice.id };
+  revalidateCrmPaths([`/employer/invoices/${invoiceId}`]);
+  return { invoiceId };
 }
 
 export async function markInvoiceStatus(

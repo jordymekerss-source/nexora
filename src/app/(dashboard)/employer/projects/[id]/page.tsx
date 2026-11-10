@@ -22,12 +22,12 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
     notFound();
   }
 
-  const { project, assignments, activeWorkers, employees, workOrders } = bundle;
+  const { project, assignments, activeWorkers, employees, workOrders, recentPhotos } = bundle;
   const assignedIds = new Set(assignments.map((row) => row.user_id));
   const assignable = employees.filter((employee) => !assignedIds.has(employee.id));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="employer-project-overview">
       <div>
         <Link href="/employer/projects" className="text-sm text-zinc-500 hover:text-zinc-300">
           ← Projecten
@@ -49,9 +49,14 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
         <p className="mt-1 text-sm text-zinc-500">
           Live overzicht van medewerkers die momenteel zijn ingeklokt.
         </p>
-        <div className="mt-4 divide-y divide-zinc-900">
+        <div className="mt-4 divide-y divide-zinc-900" data-testid="active-workers-list">
           {activeWorkers.map((worker) => (
-            <div key={worker.userId} className="flex items-center justify-between py-3 text-sm">
+            <div
+              key={worker.userId}
+              className="flex items-center justify-between py-3 text-sm"
+              data-testid="active-worker"
+              data-worker-name={worker.fullName}
+            >
               <div>
                 <div className="font-medium text-zinc-100">{worker.fullName}</div>
                 <div className="text-zinc-500">
@@ -66,6 +71,37 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
           ))}
           {activeWorkers.length === 0 ? (
             <div className="py-6 text-sm text-zinc-500">Niemand is nu ingeklokt.</div>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card data-testid="project-photos-panel">
+        <h2 className="text-lg font-semibold text-zinc-100">Projectfoto&apos;s</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Recent geüploade foto&apos;s van medewerkers op dit project.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {recentPhotos.map((photo) => (
+            <figure
+              key={photo.id}
+              className="overflow-hidden rounded-md border border-zinc-800"
+              data-testid="project-photo"
+              data-photo-user={photo.fullName}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.photoUrl}
+                alt={photo.caption ?? `Foto van ${photo.fullName}`}
+                className="h-40 w-full object-cover"
+              />
+              <figcaption className="px-3 py-2 text-xs text-zinc-400">
+                {photo.fullName}
+                {photo.caption !== null ? ` · ${photo.caption}` : ""}
+              </figcaption>
+            </figure>
+          ))}
+          {recentPhotos.length === 0 ? (
+            <div className="py-4 text-sm text-zinc-500 sm:col-span-2">Nog geen foto&apos;s.</div>
           ) : null}
         </div>
       </Card>

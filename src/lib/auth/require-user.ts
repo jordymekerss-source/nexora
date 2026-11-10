@@ -4,6 +4,7 @@ import {
   demoEmailForPersona,
   getDemoPersonaFromCookies,
   getDemoProfileForPersona,
+  type DemoPersona,
 } from "@/lib/demo/persona";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ProfileRow, ProfileRole } from "@/types/database";
@@ -15,8 +16,9 @@ export type AuthenticatedSession = {
   role: ProfileRole | "none";
 };
 
-function demoSessionFromCookies(): AuthenticatedSession & { profile: ProfileRow } {
-  const persona = getDemoPersonaFromCookies();
+function demoSessionFromPersona(
+  persona: DemoPersona,
+): AuthenticatedSession & { profile: ProfileRow } {
   const profile = getDemoProfileForPersona(persona);
   return {
     userId: profile.id,
@@ -28,7 +30,11 @@ function demoSessionFromCookies(): AuthenticatedSession & { profile: ProfileRow 
 
 export async function getAuthenticatedSession(): Promise<AuthenticatedSession | null> {
   if (isDemoMode()) {
-    return demoSessionFromCookies();
+    const persona = getDemoPersonaFromCookies();
+    if (persona === null) {
+      return null;
+    }
+    return demoSessionFromPersona(persona);
   }
 
   const supabase = createSupabaseServerClient();
@@ -78,8 +84,11 @@ export type DashboardSession =
 
 export async function requireDashboardSession(): Promise<DashboardSession> {
   if (isDemoMode()) {
-    const session = demoSessionFromCookies();
-    return { session, tenantId: DEMO_TENANT_ID };
+    const persona = getDemoPersonaFromCookies();
+    if (persona === null) {
+      redirect("/login");
+    }
+    return { session: demoSessionFromPersona(persona), tenantId: DEMO_TENANT_ID };
   }
 
   const session = await requireSession();
@@ -95,9 +104,6 @@ export async function requireDashboardSession(): Promise<DashboardSession> {
   }
 
   if (profile.tenant_id === null) {
-    // Public signup always creates employee + null tenant. Employer elevation happens
-    // only in create-organization (service role). Invited employees receive tenant_id
-    // from tenant_invites and never hit this branch.
     redirect("/onboarding/create-organization");
   }
 

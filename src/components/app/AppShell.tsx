@@ -115,7 +115,7 @@ export function SignOutForm({ children }: { children?: ReactNode }) {
         className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-zinc-700 bg-transparent px-3 py-2 text-sm text-zinc-200 transition hover:border-zinc-500 hover:text-white"
       >
         <LogOut className="h-4 w-4" aria-hidden />
-        {children ?? "Sign out"}
+        {children ?? "Uitloggen"}
       </button>
     </form>
   );

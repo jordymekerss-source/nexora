@@ -58,7 +58,7 @@ export default async function EmployerOnlyLayout({ children }: { children: React
           <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
             Demo · wissel naar medewerker voor inklokken
           </div>
-          <PersonaSwitcher current={getDemoPersonaFromCookies()} />
+          <PersonaSwitcher current={getDemoPersonaFromCookies() ?? "employer"} />
         </div>
       ) : null}
       {children}

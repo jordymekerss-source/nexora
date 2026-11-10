@@ -24,7 +24,7 @@ export default async function TimeEntriesPage() {
     await seedDemoStoreIfEmpty(false);
     const store = await readDemoStore();
     const persona = getDemoPersonaFromCookies();
-    const isEmployer = persona === "employer";
+    const isEmployer = persona === "employer" || persona === null;
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-semibold text-zinc-50">Uren</h1>

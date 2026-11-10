@@ -69,6 +69,63 @@ export async function switchDemoPersonaAction(formData: FormData): Promise<void>
   redirect(persona === "employer" ? "/employer/clients" : "/employee");
 }
 
+/** Demo-only project photo upload (data URL stored in demo JSON store). */
+export async function uploadDemoProjectPhotoAction(formData: FormData): Promise<void> {
+  const { session, tenantId } = await requireEmployeeSession();
+  if (!isDemoMode()) {
+    redirect("/employee?error=mode");
+  }
+
+  const projectId = String(formData.get("project_id") ?? "");
+  const caption = String(formData.get("caption") ?? "").trim();
+  const file = formData.get("photo");
+
+  if (!isUuid(projectId) || !(file instanceof File) || file.size <= 0) {
+    redirect("/employee?error=photo");
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    redirect("/employee?error=photosize");
+  }
+  if (!file.type.startsWith("image/")) {
+    redirect("/employee?error=phototype");
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const dataUrl = `data:${file.type};base64,${buffer.toString("base64")}`;
+
+  try {
+    await updateDemoStore((store) => {
+      const open = store.timeEntries.find(
+        (row) =>
+          row.user_id === session.userId &&
+          row.project_id === projectId &&
+          row.clock_out === null,
+      );
+      if (open === undefined) {
+        throw new Error("Geen actieve dienst op dit project.");
+      }
+      if (!store.assignments.some((row) => row.project_id === projectId && row.user_id === session.userId)) {
+        throw new Error("Niet toegewezen aan dit project.");
+      }
+      store.projectPhotos.unshift({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        project_id: projectId,
+        user_id: session.userId,
+        photo_url: dataUrl,
+        caption: caption.length > 0 ? caption : null,
+        created_at: serverNowIso(),
+      });
+    });
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    redirect("/employee?error=photo");
+  }
+
+  revalidateOps([`/employer/projects/${projectId}`, "/employee"]);
+  redirect("/employee?photo=1");
+}
+
 export async function assignEmployeeToProject(
   projectId: string,
   userId: string,
@@ -247,44 +304,55 @@ export async function correctTimeEntryFormAction(formData: FormData): Promise<vo
     redirect(`/dashboard/time?error=${issue}`);
   }
 
-  if (!isDemoMode()) {
-    redirect("/dashboard/time?error=mode");
-  }
-
   try {
-    await updateDemoStore((store) => {
-      const entry = store.timeEntries.find((row) => row.id === entryId && row.tenant_id === tenantId);
-      if (entry === undefined) {
-        throw new Error("Entry not found.");
+    if (isDemoMode()) {
+      await updateDemoStore((store) => {
+        const entry = store.timeEntries.find((row) => row.id === entryId && row.tenant_id === tenantId);
+        if (entry === undefined) {
+          throw new Error("Entry not found.");
+        }
+        store.timeEntryCorrections.unshift({
+          id: randomUUID(),
+          tenant_id: tenantId,
+          time_entry_id: entry.id,
+          corrected_by: session.userId,
+          reason,
+          old_clock_in: entry.clock_in,
+          old_clock_out: entry.clock_out,
+          old_break_minutes: entry.break_minutes,
+          new_clock_in: clockInIso,
+          new_clock_out: clockOut,
+          new_break_minutes: Math.max(0, breakMinutes),
+          created_at: serverNowIso(),
+        });
+        entry.clock_in = clockInIso;
+        entry.clock_out = clockOut;
+        entry.break_minutes = Math.max(0, breakMinutes);
+        store.auditEvents.unshift({
+          id: randomUUID(),
+          tenant_id: tenantId,
+          actor_user_id: session.userId,
+          action: "timesheet.corrected",
+          entity_type: "time_entry",
+          entity_id: entry.id,
+          metadata: { reason },
+          created_at: serverNowIso(),
+        });
+      });
+    } else {
+      const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+      const supabase = createSupabaseServerClient();
+      const { error } = await supabase.rpc("correct_time_entry", {
+        p_entry_id: entryId,
+        p_reason: reason,
+        p_clock_in: clockInIso,
+        p_clock_out: clockOut,
+        p_break_minutes: Math.max(0, breakMinutes),
+      });
+      if (error !== null) {
+        throw new Error(error.message);
       }
-      store.timeEntryCorrections.unshift({
-        id: randomUUID(),
-        tenant_id: tenantId,
-        time_entry_id: entry.id,
-        corrected_by: session.userId,
-        reason,
-        old_clock_in: entry.clock_in,
-        old_clock_out: entry.clock_out,
-        old_break_minutes: entry.break_minutes,
-        new_clock_in: clockInIso,
-        new_clock_out: clockOut,
-        new_break_minutes: Math.max(0, breakMinutes),
-        created_at: serverNowIso(),
-      });
-      entry.clock_in = clockInIso;
-      entry.clock_out = clockOut;
-      entry.break_minutes = Math.max(0, breakMinutes);
-      store.auditEvents.unshift({
-        id: randomUUID(),
-        tenant_id: tenantId,
-        actor_user_id: session.userId,
-        action: "timesheet.corrected",
-        entity_type: "time_entry",
-        entity_id: entry.id,
-        metadata: { reason },
-        created_at: serverNowIso(),
-      });
-    });
+    }
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
     redirect("/dashboard/time?error=correct");
@@ -467,6 +535,14 @@ export async function getEmployerProjectBundle(projectId: string): Promise<{
   }>;
   employees: Array<{ id: string; full_name: string }>;
   workOrders: WorkOrderRow[];
+  recentPhotos: Array<{
+    id: string;
+    userId: string;
+    fullName: string;
+    photoUrl: string;
+    caption: string | null;
+    createdAt: string;
+  }>;
 } | null> {
   await requireEmployerSession();
   if (!isUuid(projectId)) {
@@ -504,6 +580,18 @@ export async function getEmployerProjectBundle(projectId: string): Promise<{
       notes: row.notes,
     }));
 
+  const recentPhotos = store.projectPhotos
+    .filter((row) => row.project_id === projectId)
+    .slice(0, 12)
+    .map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      fullName: profileMap.get(row.user_id)?.full_name ?? row.user_id,
+      photoUrl: row.photo_url,
+      caption: row.caption,
+      createdAt: row.created_at,
+    }));
+
   return {
     project,
     assignments,
@@ -512,6 +600,7 @@ export async function getEmployerProjectBundle(projectId: string): Promise<{
       .filter((profile) => profile.role === "employee")
       .map((profile) => ({ id: profile.id, full_name: profile.full_name })),
     workOrders: store.workOrders.filter((row) => row.project_id === projectId),
+    recentPhotos,
   };
 }
 

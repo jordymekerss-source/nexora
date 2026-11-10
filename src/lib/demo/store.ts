@@ -19,6 +19,7 @@ import type {
   ModuleConfigRow,
   ProfileRow,
   ProjectAssignmentRow,
+  ProjectPhotoRow,
   ProjectRow,
   ProjectScheduleRow,
   QuoteItemRow,
@@ -47,6 +48,7 @@ export type DemoStore = {
   auditEvents: AuditEventRow[];
   moduleConfigs: ModuleConfigRow[];
   assignments: ProjectAssignmentRow[];
+  projectPhotos: ProjectPhotoRow[];
   vehicles: VehicleRow[];
   tools: ToolRow[];
   certificates: EmployeeCertificateRow[];
@@ -110,6 +112,7 @@ function emptyStore(): DemoStore {
     auditEvents: [],
     moduleConfigs: [],
     assignments: [],
+    projectPhotos: [],
     vehicles: [],
     tools: [],
     certificates: [],
@@ -123,6 +126,7 @@ function normalizeStore(raw: DemoStore): DemoStore {
     ...emptyStore(),
     ...raw,
     assignments: raw.assignments ?? [],
+    projectPhotos: raw.projectPhotos ?? [],
     vehicles: raw.vehicles ?? [],
     tools: raw.tools ?? [],
     certificates: raw.certificates ?? [],
@@ -633,6 +637,7 @@ export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boo
     breakEntries: [],
     timeEntryCorrections: [],
     auditEvents: [],
+    projectPhotos: [],
     moduleConfigs: [
       {
         id: randomUUID(),

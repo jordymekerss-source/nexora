@@ -1104,6 +1104,25 @@ export type Database = {
         Args: { p_quote_id: string };
         Returns: Array<{ project_id: string; invoice_id: string }>;
       };
+      correct_time_entry: {
+        Args: {
+          p_entry_id: string;
+          p_reason: string;
+          p_clock_in: string;
+          p_clock_out: string | null;
+          p_break_minutes: number;
+        };
+        Returns: string;
+      };
+      create_invoice_from_approved_time: {
+        Args: {
+          p_project_id: string;
+          p_hourly_rate: number;
+          p_vat_rate_bps?: number;
+          p_idempotency_key?: string | null;
+        };
+        Returns: string;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

@@ -19,8 +19,15 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const demoMode = process.env["NEXT_PUBLIC_DEMO_MODE"] === "true";
 
-  // Demo deployments use cookie persona auth enforced in server layouts/actions.
+  // Demo deployments use cookie persona auth; layouts/actions enforce role.
+  // Without a persona cookie, protected routes redirect to login.
   if (demoMode) {
+    const hasPersona = Boolean(request.cookies.get("nexora_demo_persona")?.value);
+    if (isProtectedPath(pathname) && !hasPersona) {
+      const login = new URL("/login", request.url);
+      login.searchParams.set("next", pathname);
+      return NextResponse.redirect(login);
+    }
     return NextResponse.next({
       request: { headers: request.headers },
     });
