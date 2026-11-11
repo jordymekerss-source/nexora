@@ -115,7 +115,8 @@ Task READY
 | 3 GitHub adapter | HTTP adapter + env factory (token-gated) |
 | 4 Cursor HTTP adapter | Implemented against v1 docs |
 | 5 GPT reviewer | Official SDK + strict schema + review-smoke |
-| 6–10 | Live Cursor wiring, recovery polish, dashboard, security, e2e loop |
+| 6 Live Cursor provider | HTTP adapter + SSE/poll wait + fail-closed factory + journal |
+| 7–10 | Dashboard, Postgres/Redis workers, security hardening, full e2e autonomy |
 
 ## 8. Acceptance criteria (Phase 1–2)
 
@@ -125,5 +126,8 @@ Task READY
 - [x] Mock end-to-end loop: create → reject → recover → accept  
 - [x] Official OpenAI SDK reviewer path (server-side `/nads` only)  
 - [x] GitHub HTTP adapter (draft PRs; requires `GITHUB_TOKEN` for live)  
-- [ ] Live Cursor calls — require `CURSOR_API_KEY`  
-- [ ] PostgreSQL/Redis/BullMQ production wiring — schema ready; runtime memory for dry-run  
+- [x] Live Cursor HTTP provider (unit-tested; live smoke gated on `CURSOR_API_KEY`)  
+- [x] Fail closed when `NADS_MODE=live` without `CURSOR_API_KEY`  
+- [x] Execution journal for restart / duplicate-create prevention  
+- [ ] Live Cursor smoke PASS — blocked until `CURSOR_API_KEY` is provisioned  
+- [ ] PostgreSQL/Redis/BullMQ production wiring — schema ready; memory + `.nads/execution-journal.json` for now  

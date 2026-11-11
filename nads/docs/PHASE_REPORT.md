@@ -1,53 +1,58 @@
 # NADS Phase Report
 
 **Updated:** 2026-11-11 (Europe/Amsterdam)  
-**Branch:** `cursor/nads-openai-live-review-6aee` (from `cursor/nads-orchestrator-5233`)
+**Branch:** `cursor/nads-openai-live-review-6aee`
 
-## Investigated (this phase)
+## Phase 3 focus — Live Cursor Cloud Agent integration
 
-- Prior NADS phases 1–2 on `/nads` (state machine, mock loop, raw-fetch OpenAI reviewer)
-- Official OpenAI Node SDK `openai@7.55.0` (requires Node `>=22`)
-- Structured Outputs via `chat.completions.parse` + `zodResponseFormat`
-- Docs: https://developers.openai.com/api/docs/guides/structured-outputs
-- GitHub REST adapter surface (draft PRs only; no production merge)
+### Investigated
 
-## Built / changed
+- Existing `/nads` provider interface, HTTP adapter stub, mock loop, journal SQL schema
+- Official Cursor Cloud Agents API v1 docs: https://prod.cursor.com/docs/cloud-agent/api/endpoints
+- Auth: Basic (`-u KEY:`) or Bearer
+- Idempotent create via client `agentId` → `409 agent_id_conflict`
+- `409 agent_busy` / steer delivery / SSE `Last-Event-ID` resume / `410 stream_expired`
+- GitHub adapter: keep for listing/checks; prefer Cursor `autoCreatePR` to avoid duplicate PRs
+
+### Built / changed
 
 | Item | Path |
 |---|---|
-| Official OpenAI SDK dependency | `nads/package.json` (not root SaaS) |
-| SDK OpenAIReviewer | `nads/src/adapters/openai-reviewer.ts` |
-| Reviewer factory (`NADS_MODE`) | `createReviewerFromEnv` |
-| Strict review JSON Schema | `nads/src/review/schema.ts` |
-| HTTP GitHub adapter | `nads/src/adapters/github-adapter.ts` |
-| CLI: `review-smoke`, `github-status`, `reviewer-mode` | `nads/src/cli.ts` |
-| Unit tests | `nads/tests/openai-reviewer.test.ts`, `github-adapter.test.ts` |
+| Typed Cursor errors | `nads/src/adapters/cursor-errors.ts` |
+| Expanded provider types | `nads/src/adapters/cursor-agent-provider.js` → `.ts` |
+| Production HTTP provider | `nads/src/adapters/cursor-http-adapter.ts` |
+| Fail-closed factory | `nads/src/adapters/cursor-factory.ts` |
+| Execution journal (restart recovery) | `nads/src/db/execution-journal.ts` |
+| Loop waits for terminal runs + journal | `nads/src/orchestrator/loop.ts` |
+| CLI `cursor-smoke` / `provider-mode` | `nads/src/cli.ts` |
+| Unit + gate tests | `nads/tests/cursor-*.test.ts`, `execution-journal.test.ts` |
 
-## Tests executed (this worker)
+### Endpoints used (verified)
+
+- `POST /v1/agents`
+- `GET /v1/agents/{id}`
+- `POST /v1/agents/{id}/runs`
+- `GET /v1/agents/{id}/runs`
+- `GET /v1/agents/{id}/runs/{runId}`
+- `GET /v1/agents/{id}/runs/{runId}/stream`
+- `POST /v1/agents/{id}/runs/{runId}/cancel`
+
+### Tests (this worker)
 
 | Command | Result |
 |---|---|
-| `cd nads && npm test` | **PASS** — 18/18 |
+| `cd nads && npm test` | **PASS** — 39/39 |
 | `cd nads && npm run typecheck` | **PASS** |
-| `cd nads && npm run dry-run` | **PASS** — decisions `REJECT` → `ACCEPT`, final `NEXT_TASK` |
-| `cd nads && npm run review-smoke` | **PASS** — one live call, model `gpt-4o-mini`, decision `ACCEPT`, ~2.5s |
-| `cd nads && npm run github-status` | **PASS** — correctly reports unconfigured (no `GITHUB_TOKEN`) |
-| Root `package.json` openai dep | **Absent** (SDK only under `/nads`) |
+| `cd nads && npm run dry-run` | **PASS** — `REJECT` → `ACCEPT` |
+| `cd nads && npm run cursor-smoke` | **BLOCKED** — `CURSOR_API_KEY` missing (not PASS) |
+| `cd nads && NADS_MODE=live npm run provider-mode` | Fail-closed with clear error |
 
-## Security notes
+### Remaining blockers
 
-- `openai` installed only under `/nads` — not in the Next.js/browser dependency tree
-- CLI redacts `sk-` / `ghp_` / `github_pat_` patterns in printed output
-- Errors never intentionally echo Authorization headers or API keys
-- GitHub adapter creates **draft** PRs only; no auto-merge / production deploy
+- `CURSOR_API_KEY` not present in this environment → live agent create/run not executed
+- Postgres/Redis production workers still optional (journal file bridges restart recovery)
+- Dashboard UI not started
 
-## Still blocked / next
+### Next phase
 
-- Live Cursor `POST /v1/agents` — needs `CURSOR_API_KEY`
-- Postgres/Redis/BullMQ production workers
-- Development Control Center UI
-- Live GitHub calls — needs `GITHUB_TOKEN` (adapter ready; `github-status` reports config)
-
-## Next phase
-
-Wire live Cursor provider selection behind `NADS_MODE=live` + `CURSOR_API_KEY`, then dashboard skeleton.
+Add `CURSOR_API_KEY`, run `npm run cursor-smoke` for live evidence, then Control Center dashboard skeleton.

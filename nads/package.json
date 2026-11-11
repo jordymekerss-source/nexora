@@ -13,7 +13,9 @@
     "dry-run": "tsx src/cli.ts dry-run",
     "review-smoke": "tsx src/cli.ts review-smoke",
     "github-status": "tsx src/cli.ts github-status",
-    "reviewer-mode": "tsx src/cli.ts reviewer-mode"
+    "reviewer-mode": "tsx src/cli.ts reviewer-mode",
+    "provider-mode": "tsx src/cli.ts provider-mode",
+    "cursor-smoke": "tsx src/cli.ts cursor-smoke"
   },
   "engines": {
     "node": ">=22.0.0"

@@ -47,3 +47,4 @@ yarn-error.log*
 /playwright/.auth/
 nads/node_modules/
 nads/dist/
+nads/.nads/

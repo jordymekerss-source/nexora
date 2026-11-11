@@ -35,10 +35,23 @@ export type ProjectSettings = {
   maxConcurrentAgents: number;
 };
 
+export type AgentSessionRecord = {
+  id: string;
+  taskId: string;
+  provider: string;
+  providerAgentId?: string;
+  providerRunId?: string;
+  branchName?: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+};
+
 export class MemoryStore {
   readonly projectId: string;
   tasks: DevelopmentTask[] = [];
   events: DevelopmentEvent[] = [];
+  agentSessions: AgentSessionRecord[] = [];
   transitions: Array<{ taskId: string; from: TaskStatus; to: TaskStatus; at: string }> = [];
   settings: ProjectSettings = {
     autonomousEnabled: true,
@@ -118,5 +131,29 @@ export class MemoryStore {
     };
     this.events.push(event);
     return event;
+  }
+
+  recordAgentSession(input: {
+    taskId: string;
+    providerAgentId?: string;
+    providerRunId?: string;
+    branchName?: string;
+    status: string;
+  }): AgentSessionRecord {
+    const record: AgentSessionRecord = {
+      id: randomUUID(),
+      taskId: input.taskId,
+      provider: "cursor",
+      providerAgentId: input.providerAgentId,
+      providerRunId: input.providerRunId,
+      branchName: input.branchName,
+      status: input.status,
+      startedAt: new Date().toISOString(),
+      finishedAt: ["FINISHED", "ERROR", "CANCELLED", "EXPIRED"].includes(input.status)
+        ? new Date().toISOString()
+        : undefined,
+    };
+    this.agentSessions.push(record);
+    return record;
   }
 }

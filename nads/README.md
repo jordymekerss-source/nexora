@@ -10,22 +10,22 @@ Do not import `/nads` from `/src` application code. Do not add the OpenAI SDK to
 - Architecture doc with **verified** Cursor Cloud Agents API v1 endpoints
 - PostgreSQL control-plane schema (`db/migrations/001_init.sql`)
 - Explicit task state machine with illegal-transition guards
-- `CursorAgentProvider` + HTTP adapter (`POST/GET /v1/agents…`)
+- Production `HttpCursorAgentProvider` (create/continue/get/list/stream/cancel/wait)
+- Fail-closed `createCursorProviderFromEnv()` when `NADS_MODE=live` without `CURSOR_API_KEY`
+- Execution journal (`.nads/execution-journal.json`) for restart recovery / idempotent agent ids
 - Mock Cursor provider for dry-run
 - Heuristic reviewer (dry-run) + **official OpenAI SDK** structured reviewer (`openai@7`)
-- `createReviewerFromEnv()` — live only when `NADS_MODE=live` and `OPENAI_API_KEY` is set
-- HTTP GitHub adapter (draft PRs; token-gated) + unconfigured stub
-- Autonomous mock loop: create → REJECT → recovery → ACCEPT
-- Idempotent event store, emergency stop / autonomous flags
-- Unit tests + CLI dry-run + optional `review-smoke`
+- HTTP GitHub adapter (draft PRs; token-gated) — prefer Cursor `autoCreatePR` to avoid duplicate PRs
+- Autonomous mock loop: create → REJECT → recovery → ACCEPT (max 3 repairs)
+- Unit tests + CLI `dry-run` / `review-smoke` / `cursor-smoke`
 
 ## What is not live yet
 
-- Real Cursor agents without `CURSOR_API_KEY`
+- Live Cursor smoke **PASS** until `CURSOR_API_KEY` is provisioned (`cursor-smoke` reports **BLOCKED**)
 - PostgreSQL + Redis + BullMQ production workers
 - Development Control Center UI
 - GitHub App merge automation
-- Cursor v1 webhooks (docs: coming soon — polling used instead)
+- Cursor v1 webhooks (docs: coming soon — polling + SSE used instead)
 
 ## Setup
 
@@ -42,6 +42,12 @@ Optional live structured review (one call, no retry):
 
 ```bash
 npm run review-smoke
+```
+
+Live Cursor probe (reports **BLOCKED** if `CURSOR_API_KEY` missing — never silent PASS):
+
+```bash
+npm run cursor-smoke
 ```
 
 ## Environment

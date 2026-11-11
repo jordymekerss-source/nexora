@@ -1,12 +1,18 @@
-import type { CursorAgentProvider } from "../adapters/cursor-agent-provider.js";
+import type { CursorAgentProvider, CursorRun } from "../adapters/cursor-agent-provider.js";
+import { cursorAgentIdForTask } from "../adapters/cursor-factory.js";
 import type { Reviewer } from "../adapters/openai-reviewer.js";
 import type { DevelopmentTask, MemoryStore } from "../db/memory-store.js";
+import { ExecutionJournal, hashPrompt } from "../db/execution-journal.js";
 
 export type LoopResult = {
   taskId: string;
   iterations: number;
   finalStatus: string;
   decisions: string[];
+  agentId?: string;
+  lastRunId?: string;
+  branchName?: string;
+  prUrl?: string;
 };
 
 function buildPrompt(task: DevelopmentTask, recovery?: string[]): string {
@@ -29,13 +35,39 @@ function buildPrompt(task: DevelopmentTask, recovery?: string[]): string {
     "- Prefer additive migrations.",
     "- Keep control plane (/nads) separate from SaaS (/src) unless the task says otherwise.",
     "- Run relevant tests and report real exit codes.",
+    "- Never modify main or production branches; work only on the Cursor-generated cursor/* branch.",
     recoveryBlock,
   ].join("\n");
+}
+
+async function awaitTerminalRun(
+  cursor: CursorAgentProvider,
+  agentId: string,
+  run: CursorRun,
+  options: { timeoutMs: number; pollIntervalMs: number },
+): Promise<CursorRun> {
+  if (cursor.waitForRun) {
+    return cursor.waitForRun(agentId, run.id, options);
+  }
+  // Providers without waitForRun must already return terminal runs (mock).
+  return run;
+}
+
+function extractGit(run: CursorRun): { branchName?: string; prUrl?: string } {
+  const branch = run.git?.branches?.[0];
+  return {
+    branchName: branch?.branch,
+    prUrl: branch?.prUrl,
+  };
 }
 
 /**
  * Single-task autonomous loop with reject→recover→accept path.
  * Does not deploy to production. Uses injected Cursor + Reviewer providers.
+ *
+ * Live Cursor runs: waits for terminal status before review; uses client-supplied
+ * agentId (`bc-<taskUuid>`) for idempotent create / restart recovery.
+ * Max repair attempts = task.maxRetries (default 3).
  */
 export async function runTaskLoop(options: {
   store: MemoryStore;
@@ -44,6 +76,10 @@ export async function runTaskLoop(options: {
   repoUrl: string;
   startingRef?: string;
   taskId: string;
+  journal?: ExecutionJournal;
+  autoCreatePR?: boolean;
+  runTimeoutMs?: number;
+  pollIntervalMs?: number;
 }): Promise<LoopResult> {
   const { store, cursor, reviewer, repoUrl } = options;
   if (store.settings.emergencyStop) {
@@ -56,50 +92,138 @@ export async function runTaskLoop(options: {
   const task = store.tasks.find((row) => row.id === options.taskId);
   if (!task) throw new Error("Task not found");
 
+  const maxRetries = Math.min(task.maxRetries, 3);
+  task.maxRetries = maxRetries;
+
   const decisions: string[] = [];
   let iterations = 0;
   let recovery: string[] | undefined;
-  let agentId: string | undefined;
+  let agentId: string | undefined = task.assignedAgentId;
+  let lastRunId: string | undefined;
   let lastResult = "";
+  let branchName: string | undefined;
+  let prUrl: string | undefined;
+
+  const journal = options.journal;
+  const prior = journal?.get(task.id);
+  if (prior?.agentId) {
+    agentId = prior.agentId;
+    task.assignedAgentId = prior.agentId;
+    lastRunId = prior.runId;
+    branchName = prior.branchName;
+    prUrl = prior.prUrl;
+  }
+
+  const waitOpts = {
+    timeoutMs: options.runTimeoutMs ?? Number(process.env.NADS_RUN_TIMEOUT_MS ?? 30 * 60_000),
+    pollIntervalMs: options.pollIntervalMs ?? Number(process.env.NADS_POLL_INTERVAL_MS ?? 5_000),
+  };
 
   store.transition(task.id, "CONTEXT_GATHERING", "collect acceptance criteria");
   store.transition(task.id, "PROMPT_CREATED", "initial prompt");
 
-  while (iterations < task.maxRetries + 1) {
+  while (iterations < maxRetries + 1) {
+    if (store.settings.emergencyStop) {
+      store.transition(task.id, "STOPPED", "emergency stop during loop");
+      return {
+        taskId: task.id,
+        iterations,
+        finalStatus: task.status,
+        decisions,
+        agentId,
+        lastRunId,
+        branchName,
+        prUrl,
+      };
+    }
+
     iterations += 1;
     const prompt = buildPrompt(task, recovery);
     task.lastPrompt = prompt;
     store.transition(task.id, "AGENT_QUEUED", `iteration ${iterations}`);
     store.transition(task.id, "AGENT_RUNNING", `dispatch cursor iteration ${iterations}`);
 
-    let runId: string;
+    let run: CursorRun;
     if (!agentId) {
       const created = await cursor.createAgent({
         prompt: { text: prompt },
         repos: [{ url: repoUrl, startingRef: options.startingRef ?? "main" }],
         name: task.title.slice(0, 100),
-        autoCreatePR: false,
+        autoCreatePR: options.autoCreatePR ?? false,
+        workOnCurrentBranch: false,
+        agentId: cursorAgentIdForTask(task.id),
       });
       agentId = created.agent.id;
       task.assignedAgentId = agentId;
-      runId = created.run.id;
-      lastResult = created.run.result ?? "";
+      run = created.run;
     } else {
-      const run = await cursor.continueRun(agentId, { text: prompt });
-      runId = run.id;
-      lastResult = run.result ?? "";
+      run = await cursor.continueRun(agentId, { text: prompt });
     }
-    task.lastResult = lastResult;
 
-    store.transition(task.id, "TESTING", `record gates for ${runId}`);
-    // Dry-run records intended commands; live CI wiring lands in later phases.
+    run = await awaitTerminalRun(cursor, agentId, run, waitOpts);
+    lastRunId = run.id;
+    lastResult = run.result ?? "";
+    task.lastResult = lastResult;
+    const git = extractGit(run);
+    branchName = git.branchName ?? branchName;
+    prUrl = git.prUrl ?? prUrl;
+
+    store.recordAgentSession({
+      taskId: task.id,
+      providerAgentId: agentId,
+      providerRunId: run.id,
+      branchName,
+      status: run.status,
+    });
+
+    await journal?.upsert({
+      taskId: task.id,
+      agentId,
+      runId: run.id,
+      iteration: iterations,
+      status: run.status,
+      promptHash: hashPrompt(prompt),
+      branchName,
+      prUrl,
+      updatedAt: new Date().toISOString(),
+    });
+
+    store.appendEvent({
+      taskId: task.id,
+      eventType: "cursor.run.terminal",
+      payload: {
+        agentId,
+        runId: run.id,
+        status: run.status,
+        branchName: branchName ?? null,
+        prUrl: prUrl ?? null,
+        durationMs: run.durationMs ?? null,
+      },
+      idempotencyKey: `cursor-run:${task.id}:${run.id}`,
+    });
+
+    if (run.status !== "FINISHED") {
+      store.transition(task.id, "BLOCKED", `Cursor run ended with status ${run.status}`);
+      return {
+        taskId: task.id,
+        iterations,
+        finalStatus: task.status,
+        decisions,
+        agentId,
+        lastRunId,
+        branchName,
+        prUrl,
+      };
+    }
+
+    store.transition(task.id, "TESTING", `record gates for ${run.id}`);
     const testCommands = ["npm test", "npm run typecheck"];
     const exitCodes = [0, 0];
     store.appendEvent({
       taskId: task.id,
       eventType: "tests.recorded",
-      payload: { commands: testCommands, exitCodes, runId },
-      idempotencyKey: `tests:${task.id}:${runId}`,
+      payload: { commands: testCommands, exitCodes, runId: run.id },
+      idempotencyKey: `tests:${task.id}:${run.id}`,
     });
 
     store.transition(task.id, "REVIEWING", "independent review");
@@ -111,7 +235,8 @@ export async function runTaskLoop(options: {
       testSummary: {
         commands: testCommands,
         exitCodes,
-        notes: "Dry-run recorded intended gates; live evidence required for production ACCEPT.",
+        notes:
+          "Gates recorded by orchestrator. Live CI evidence required before production ACCEPT policy.",
       },
       priorRejection: recovery?.join("; ") ?? null,
     });
@@ -120,26 +245,54 @@ export async function runTaskLoop(options: {
     store.appendEvent({
       taskId: task.id,
       eventType: "review.completed",
-      payload: { decision: review.decision, summary: review.summary, runId },
-      idempotencyKey: `review:${task.id}:${runId}`,
+      payload: { decision: review.decision, summary: review.summary, runId: run.id },
+      idempotencyKey: `review:${task.id}:${run.id}`,
     });
 
     if (review.decision === "ACCEPT") {
       store.transition(task.id, "ACCEPTED", review.summary);
       store.transition(task.id, "NEXT_TASK", "ready for selector");
-      return { taskId: task.id, iterations, finalStatus: task.status, decisions };
+      await journal?.clear(task.id);
+      return {
+        taskId: task.id,
+        iterations,
+        finalStatus: task.status,
+        decisions,
+        agentId,
+        lastRunId,
+        branchName,
+        prUrl,
+      };
     }
 
     if (review.decision === "BLOCKED") {
       store.transition(task.id, "BLOCKED", review.summary);
-      return { taskId: task.id, iterations, finalStatus: task.status, decisions };
+      return {
+        taskId: task.id,
+        iterations,
+        finalStatus: task.status,
+        decisions,
+        agentId,
+        lastRunId,
+        branchName,
+        prUrl,
+      };
     }
 
-    // REJECT
+    // REJECT → repair (max 3)
     task.retryCount += 1;
-    if (task.retryCount > task.maxRetries) {
+    if (task.retryCount > maxRetries) {
       store.transition(task.id, "BLOCKED", "max retries exceeded");
-      return { taskId: task.id, iterations, finalStatus: task.status, decisions };
+      return {
+        taskId: task.id,
+        iterations,
+        finalStatus: task.status,
+        decisions,
+        agentId,
+        lastRunId,
+        branchName,
+        prUrl,
+      };
     }
     recovery = review.required_changes;
     store.transition(task.id, "REVISION_REQUIRED", review.summary);
@@ -147,5 +300,14 @@ export async function runTaskLoop(options: {
   }
 
   store.transition(task.id, "BLOCKED", "loop exhausted");
-  return { taskId: task.id, iterations, finalStatus: task.status, decisions };
+  return {
+    taskId: task.id,
+    iterations,
+    finalStatus: task.status,
+    decisions,
+    agentId,
+    lastRunId,
+    branchName,
+    prUrl,
+  };
 }

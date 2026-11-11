@@ -7,7 +7,10 @@ import {
   resolveOpenAIModel,
 } from "./adapters/openai-reviewer.js";
 import { createGitHubAdapterFromEnv, UnconfiguredGitHubAdapter } from "./adapters/github-adapter.js";
+import { createCursorProviderFromEnv } from "./adapters/cursor-factory.js";
+import { HttpCursorAgentProvider } from "./adapters/cursor-http-adapter.js";
 import { MemoryStore } from "./db/memory-store.js";
+import { ExecutionJournal } from "./db/execution-journal.js";
 import { runTaskLoop } from "./orchestrator/loop.js";
 
 function redactSecrets(value: unknown): unknown {
@@ -15,7 +18,8 @@ function redactSecrets(value: unknown): unknown {
     return value
       .replace(/sk-[a-zA-Z0-9_-]+/g, "[REDACTED]")
       .replace(/ghp_[a-zA-Z0-9]+/g, "[REDACTED]")
-      .replace(/github_pat_[a-zA-Z0-9_]+/g, "[REDACTED]");
+      .replace(/github_pat_[a-zA-Z0-9_]+/g, "[REDACTED]")
+      .replace(/key_[a-zA-Z0-9_-]{10,}/g, "[REDACTED]");
   }
   if (Array.isArray(value)) return value.map(redactSecrets);
   if (value && typeof value === "object") {
@@ -182,7 +186,11 @@ async function githubStatus(): Promise<void> {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "github-status failed";
     console.log(
-      JSON.stringify(redactSecrets({ ok: false, configured: true, error: message.slice(0, 400) }), null, 2),
+      JSON.stringify(
+        redactSecrets({ ok: false, configured: true, error: message.slice(0, 400) }),
+        null,
+        2,
+      ),
     );
     process.exitCode = 1;
   }
@@ -200,6 +208,194 @@ async function showReviewerMode(): Promise<void> {
   );
 }
 
+async function showProviderMode(): Promise<void> {
+  const mode = (process.env.NADS_MODE ?? "dry-run").toLowerCase();
+  const hasCursorKey = Boolean(process.env.CURSOR_API_KEY?.trim());
+  let providerName = "unresolved";
+  let error: string | null = null;
+  try {
+    const provider = createCursorProviderFromEnv();
+    providerName = provider.constructor.name;
+  } catch (err: unknown) {
+    error = err instanceof Error ? err.message : "provider resolve failed";
+  }
+  console.log(
+    JSON.stringify({
+      mode,
+      provider: providerName,
+      hasCursorKey,
+      error,
+    }),
+  );
+  if (error) process.exitCode = 2;
+}
+
+/**
+ * Controlled live Cursor Cloud Agent integration probe.
+ * Reports BLOCKED (not PASS) when CURSOR_API_KEY is missing.
+ * Never modifies main; uses workOnCurrentBranch=false + autoCreatePR=false by default.
+ */
+async function cursorSmoke(): Promise<void> {
+  const key = process.env.CURSOR_API_KEY?.trim() ?? "";
+  if (!key) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        status: "BLOCKED",
+        reason: "CURSOR_API_KEY not configured — live Cursor integration not executed",
+        endpointsDocumented: [
+          "POST /v1/agents",
+          "GET /v1/agents/{id}",
+          "POST /v1/agents/{id}/runs",
+          "GET /v1/agents/{id}/runs",
+          "GET /v1/agents/{id}/runs/{runId}",
+          "GET /v1/agents/{id}/runs/{runId}/stream",
+          "POST /v1/agents/{id}/runs/{runId}/cancel",
+        ],
+      }),
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  const repoUrl =
+    process.env.NADS_REPO_URL?.trim() || "https://github.com/jordymekerss-source/nexora";
+  const startingRef = process.env.NADS_CURSOR_STARTING_REF?.trim() || "main";
+  const autoCreatePR = process.env.NADS_CURSOR_AUTO_CREATE_PR === "true";
+  const started = Date.now();
+  const journal = new ExecutionJournal(ExecutionJournal.defaultPath());
+  await journal.load();
+
+  const provider = new HttpCursorAgentProvider({
+    apiKey: key,
+    baseUrl: process.env.CURSOR_API_BASE_URL?.trim() || "https://api.cursor.com/v1",
+    defaultPollIntervalMs: Number(process.env.NADS_POLL_INTERVAL_MS ?? 5_000),
+    defaultTimeoutMs: Number(process.env.NADS_RUN_TIMEOUT_MS ?? 20 * 60_000),
+  });
+
+  const store = new MemoryStore();
+  const task = store.seedTask({
+    title: "NADS cursor-smoke probe",
+    description:
+      "Harmless probe for NADS live Cursor integration. Create nads/docs/CURSOR_SMOKE_PROBE.md " +
+      "with exactly one line: NADS cursor smoke probe. Do not modify any other files. " +
+      "Do not touch main or production. Push only to the Cursor-generated cursor/* branch.",
+    acceptanceCriteria: [
+      "Only nads/docs/CURSOR_SMOKE_PROBE.md is added/updated",
+      "No changes to main",
+      "Work lands on a Cursor-generated branch",
+    ],
+    maxRetries: 0,
+  });
+
+  try {
+    const created = await provider.createAgent({
+      prompt: {
+        text: [
+          "You are running a NADS connectivity probe.",
+          "Create file nads/docs/CURSOR_SMOKE_PROBE.md containing exactly:",
+          "NADS cursor smoke probe",
+          "Do not modify any other files.",
+          "Do not merge or push to main.",
+          "Stop after the file exists on the agent branch.",
+        ].join("\n"),
+      },
+      repos: [{ url: repoUrl, startingRef }],
+      name: "nads-cursor-smoke",
+      autoCreatePR,
+      workOnCurrentBranch: false,
+      agentId: `bc-${task.id}`,
+    });
+
+    await journal.upsert({
+      taskId: task.id,
+      agentId: created.agent.id,
+      runId: created.run.id,
+      iteration: 1,
+      status: created.run.status,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const terminal = await provider.waitForRun(created.agent.id, created.run.id);
+    const branch = terminal.git?.branches?.[0];
+
+    store.recordAgentSession({
+      taskId: task.id,
+      providerAgentId: created.agent.id,
+      providerRunId: terminal.id,
+      branchName: branch?.branch,
+      status: terminal.status,
+    });
+
+    store.appendEvent({
+      taskId: task.id,
+      eventType: "cursor.smoke.completed",
+      payload: {
+        agentId: created.agent.id,
+        runId: terminal.id,
+        status: terminal.status,
+        branch: branch?.branch ?? null,
+        prUrl: branch?.prUrl ?? null,
+        agentUrl: created.agent.url ?? null,
+      },
+      idempotencyKey: `cursor-smoke:${created.agent.id}:${terminal.id}`,
+    });
+
+    await journal.upsert({
+      taskId: task.id,
+      agentId: created.agent.id,
+      runId: terminal.id,
+      iteration: 1,
+      status: terminal.status,
+      branchName: branch?.branch,
+      prUrl: branch?.prUrl,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const pass = terminal.status === "FINISHED" && Boolean(branch?.branch);
+    console.log(
+      JSON.stringify(
+        redactSecrets({
+          ok: pass,
+          status: pass ? "PASS" : "FAIL",
+          agentId: created.agent.id,
+          runId: terminal.id,
+          runStatus: terminal.status,
+          branch: branch?.branch ?? null,
+          prUrl: branch?.prUrl ?? null,
+          agentUrl: created.agent.url ?? null,
+          resultPreview: (terminal.result ?? "").slice(0, 240),
+          durationMs: terminal.durationMs ?? null,
+          elapsedMs: Date.now() - started,
+          evidenceEvents: store.events.length,
+          autoCreatePR,
+          note: autoCreatePR
+            ? "PR creation delegated to Cursor autoCreatePR (NADS GitHub adapter not used to avoid duplicates)"
+            : "autoCreatePR=false — verify branch only; enable NADS_CURSOR_AUTO_CREATE_PR=true to let Cursor open a draft PR",
+        }),
+        null,
+        2,
+      ),
+    );
+    process.exitCode = pass ? 0 : 1;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "cursor-smoke failed";
+    console.log(
+      JSON.stringify(
+        redactSecrets({
+          ok: false,
+          status: "FAIL",
+          error: message.slice(0, 500),
+          elapsedMs: Date.now() - started,
+        }),
+        null,
+        2,
+      ),
+    );
+    process.exitCode = 1;
+  }
+}
+
 const command = process.argv[2] ?? "dry-run";
 
 const runners: Record<string, () => Promise<void>> = {
@@ -207,12 +403,14 @@ const runners: Record<string, () => Promise<void>> = {
   "review-smoke": reviewSmoke,
   "github-status": githubStatus,
   "reviewer-mode": showReviewerMode,
+  "provider-mode": showProviderMode,
+  "cursor-smoke": cursorSmoke,
 };
 
 const run = runners[command];
 if (!run) {
   console.error(
-    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode`,
+    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | cursor-smoke`,
   );
   process.exit(1);
 }
