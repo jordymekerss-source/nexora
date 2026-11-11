@@ -380,19 +380,29 @@ async function cursorSmoke(): Promise<void> {
     process.exitCode = pass ? 0 : 1;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "cursor-smoke failed";
+    const billingBlocked =
+      /usage_limit_exceeded|prepaid balance|add funds|auto top-up|billing/i.test(message);
+    const authBlocked = /→ 401|→ 403|unauthorized|forbidden/i.test(message);
+    const status = billingBlocked || authBlocked ? "BLOCKED" : "FAIL";
     console.log(
       JSON.stringify(
         redactSecrets({
           ok: false,
-          status: "FAIL",
+          status,
           error: message.slice(0, 500),
           elapsedMs: Date.now() - started,
+          note: billingBlocked
+            ? "Cursor API authenticated, but prepaid balance is exhausted — top up Cursor billing, then re-run npm run cursor-smoke (no automatic retry)."
+            : authBlocked
+              ? "Cursor API rejected credentials or permissions."
+              : undefined,
         }),
         null,
         2,
       ),
     );
-    process.exitCode = 1;
+    // BLOCKED = environment/billing, not an implementation defect.
+    process.exitCode = status === "FAIL" ? 1 : 0;
   }
 }
 

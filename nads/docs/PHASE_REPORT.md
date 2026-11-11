@@ -19,7 +19,7 @@
 | Item | Path |
 |---|---|
 | Typed Cursor errors | `nads/src/adapters/cursor-errors.ts` |
-| Expanded provider types | `nads/src/adapters/cursor-agent-provider.js` → `.ts` |
+| Expanded provider types | `nads/src/adapters/cursor-agent-provider.ts` |
 | Production HTTP provider | `nads/src/adapters/cursor-http-adapter.ts` |
 | Fail-closed factory | `nads/src/adapters/cursor-factory.ts` |
 | Execution journal (restart recovery) | `nads/src/db/execution-journal.ts` |
@@ -44,15 +44,22 @@
 | `cd nads && npm test` | **PASS** — 39/39 |
 | `cd nads && npm run typecheck` | **PASS** |
 | `cd nads && npm run dry-run` | **PASS** — `REJECT` → `ACCEPT` |
-| `cd nads && npm run cursor-smoke` | **BLOCKED** — `CURSOR_API_KEY` missing (not PASS) |
-| `cd nads && NADS_MODE=live npm run provider-mode` | Fail-closed with clear error |
+| `NADS_MODE=live npm run provider-mode` | **PASS** — resolves `HttpCursorAgentProvider` with key present |
+| `cd nads && npm run cursor-smoke` | **BLOCKED** — live `POST /v1/agents` returned `400 usage_limit_exceeded` (prepaid balance used up). Auth succeeded; no agent created. No automatic retry. |
+
+### Live API evidence (redacted)
+
+- `CURSOR_API_KEY`: accessible and non-empty after user secret entry
+- Request: `POST https://api.cursor.com/v1/agents` (Basic auth)
+- Response: `400` / `usage_limit_exceeded` — prepaid balance exhausted
+- Conclusion: integration wiring + credentials OK; Cursor billing must be topped up before a full agent/run/branch smoke can PASS
 
 ### Remaining blockers
 
-- `CURSOR_API_KEY` not present in this environment → live agent create/run not executed
+- Cursor prepaid balance / auto top-up required for live agent execution
 - Postgres/Redis production workers still optional (journal file bridges restart recovery)
 - Dashboard UI not started
 
 ### Next phase
 
-Add `CURSOR_API_KEY`, run `npm run cursor-smoke` for live evidence, then Control Center dashboard skeleton.
+Top up Cursor billing → re-run `npm run cursor-smoke` once for live agent/branch evidence → Control Center dashboard skeleton.
