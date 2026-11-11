@@ -3,8 +3,8 @@ import { z } from "zod";
 export const ReviewDecisionSchema = z.enum(["ACCEPT", "REJECT", "BLOCKED"]);
 
 export const ReviewFindingSchema = z.object({
-  path: z.string().optional(),
-  symbol: z.string().optional(),
+  path: z.string().nullable(),
+  symbol: z.string().nullable(),
   problem: z.string(),
   impact: z.string(),
   remediation: z.string(),
@@ -24,16 +24,46 @@ export const CodeReviewResultSchema = z.object({
   next_task: z.string().nullable(),
   confidence: z.number().min(0).max(1),
   evidence: z.object({
-    commit_hashes: z.array(z.string()).default([]),
-    test_commands: z.array(z.string()).default([]),
-    test_exit_codes: z.array(z.number()).default([]),
-    notes: z.string().default(""),
+    commit_hashes: z.array(z.string()),
+    test_commands: z.array(z.string()),
+    test_exit_codes: z.array(z.number()),
+    notes: z.string(),
   }),
 });
 
 export type CodeReviewResult = z.infer<typeof CodeReviewResultSchema>;
 
-/** JSON Schema fragment for OpenAI structured outputs (mirrors Zod). */
+/** Finding JSON Schema — all fields required; additionalProperties false (OpenAI strict). */
+const FINDING_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "path",
+    "symbol",
+    "problem",
+    "impact",
+    "remediation",
+    "verification",
+    "certainty",
+  ],
+  properties: {
+    path: { type: ["string", "null"] },
+    symbol: { type: ["string", "null"] },
+    problem: { type: "string" },
+    impact: { type: "string" },
+    remediation: { type: "string" },
+    verification: { type: "string" },
+    certainty: {
+      type: "string",
+      enum: ["confirmed", "likely", "possible", "unverified"],
+    },
+  },
+} as const;
+
+/**
+ * JSON Schema for OpenAI Structured Outputs (strict).
+ * Source: https://developers.openai.com/api/docs/guides/structured-outputs
+ */
 export const OPENAI_REVIEW_JSON_SCHEMA = {
   name: "nads_code_review",
   strict: true,
@@ -56,10 +86,10 @@ export const OPENAI_REVIEW_JSON_SCHEMA = {
     properties: {
       decision: { type: "string", enum: ["ACCEPT", "REJECT", "BLOCKED"] },
       summary: { type: "string" },
-      verified_findings: { type: "array", items: { type: "object", additionalProperties: true } },
+      verified_findings: { type: "array", items: FINDING_JSON_SCHEMA },
       failed_acceptance_criteria: { type: "array", items: { type: "string" } },
-      security_findings: { type: "array", items: { type: "object", additionalProperties: true } },
-      regression_findings: { type: "array", items: { type: "object", additionalProperties: true } },
+      security_findings: { type: "array", items: FINDING_JSON_SCHEMA },
+      regression_findings: { type: "array", items: FINDING_JSON_SCHEMA },
       required_changes: { type: "array", items: { type: "string" } },
       required_tests: { type: "array", items: { type: "string" } },
       next_task: { type: ["string", "null"] },

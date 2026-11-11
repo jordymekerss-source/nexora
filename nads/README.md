@@ -3,24 +3,25 @@
 Control plane for the GPT ↔ Cursor autonomous development loop.
 
 **This package is not part of the customer-facing NEXORA SaaS runtime.**  
-Do not import `/nads` from `/src` application code.
+Do not import `/nads` from `/src` application code. Do not add the OpenAI SDK to the frontend bundle.
 
-## What works now (Phases 1–2)
+## What works now
 
 - Architecture doc with **verified** Cursor Cloud Agents API v1 endpoints
 - PostgreSQL control-plane schema (`db/migrations/001_init.sql`)
 - Explicit task state machine with illegal-transition guards
 - `CursorAgentProvider` + HTTP adapter (`POST/GET /v1/agents…`)
 - Mock Cursor provider for dry-run
-- Heuristic reviewer (dry-run) + OpenAI structured reviewer (when keyed)
-- Autonomous loop: create → REJECT planted fail → recovery → ACCEPT
-- Idempotent event store
-- Emergency stop / autonomous flags
-- Unit tests + CLI dry-run
+- Heuristic reviewer (dry-run) + **official OpenAI SDK** structured reviewer (`openai@7`)
+- `createReviewerFromEnv()` — live only when `NADS_MODE=live` and `OPENAI_API_KEY` is set
+- HTTP GitHub adapter (draft PRs; token-gated) + unconfigured stub
+- Autonomous mock loop: create → REJECT → recovery → ACCEPT
+- Idempotent event store, emergency stop / autonomous flags
+- Unit tests + CLI dry-run + optional `review-smoke`
 
 ## What is not live yet
 
-- Real Cursor/OpenAI calls without API keys
+- Real Cursor agents without `CURSOR_API_KEY`
 - PostgreSQL + Redis + BullMQ production workers
 - Development Control Center UI
 - GitHub App merge automation
@@ -31,24 +32,35 @@ Do not import `/nads` from `/src` application code.
 ```bash
 cd nads
 npm install
-cp .env.example .env   # fill secrets locally only
+cp .env.example .env   # fill secrets locally only — never commit
 npm test
 npm run dry-run
 npm run typecheck
 ```
 
+Optional live structured review (one call, no retry):
+
+```bash
+npm run review-smoke
+```
+
 ## Environment
 
-See `.env.example`. Required for live mode:
+See `.env.example`. Required for live OpenAI review:
+
+- `OPENAI_API_KEY`
+- `NADS_MODE=live`
+- `NADS_OPENAI_MODEL` (default `gpt-4o-mini`)
+
+Later / optional:
 
 - `CURSOR_API_KEY`
-- `OPENAI_API_KEY`
-- `GITHUB_TOKEN` (later phases)
-- `DATABASE_URL` / `REDIS_URL` (production)
+- `GITHUB_TOKEN`
+- `DATABASE_URL` / `REDIS_URL`
 
 Default `NADS_MODE=dry-run` uses mocks and never spends provider budget.
 
 ## Security boundaries
 
-Allowed: code tasks on integration branches, tests, docs, PRs to integration branch.  
-Forbidden: production deploys, production DB, reading production secrets into prompts, unlimited spend, disabling tests to force ACCEPT.
+Allowed: code tasks on integration branches, tests, docs, draft PRs to integration branch.  
+Forbidden: production deploys, production DB, reading production secrets into prompts, unlimited spend, disabling tests to force ACCEPT, shipping OpenAI keys to the browser.

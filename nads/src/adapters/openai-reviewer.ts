@@ -1,6 +1,7 @@
+import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
 import {
   CodeReviewResultSchema,
-  OPENAI_REVIEW_JSON_SCHEMA,
   type CodeReviewResult,
 } from "../review/schema.js";
 
@@ -38,6 +39,8 @@ export class HeuristicReviewer implements Reviewer {
           : "One or more required tests failed.",
         verified_findings: [
           {
+            path: null,
+            symbol: null,
             problem: plantedFail ? "MOCK_IMPLANT_FAIL marker in result" : "Non-zero test exit code",
             impact: "Task acceptance criteria not met",
             remediation: "Fix implementation and re-run required tests",
@@ -86,53 +89,101 @@ export class HeuristicReviewer implements Reviewer {
   }
 }
 
-/** Live OpenAI structured review — only used when OPENAI_API_KEY is set. */
+export type OpenAIReviewerOptions = {
+  apiKey: string;
+  model: string;
+  baseURL?: string;
+  /** Injected client for unit tests — never log secrets. */
+  client?: OpenAI;
+};
+
+/**
+ * Live OpenAI structured review via the official Node SDK.
+ * Server-side / control-plane only — never import into the Next.js browser bundle.
+ *
+ * Uses Chat Completions + Structured Outputs (json_schema / zodResponseFormat).
+ * Docs: https://developers.openai.com/api/docs/guides/structured-outputs
+ * SDK: https://github.com/openai/openai-node
+ */
 export class OpenAIReviewer implements Reviewer {
-  constructor(
-    private readonly apiKey: string,
-    private readonly model: string,
-    private readonly baseUrl = "https://api.openai.com/v1",
-  ) {}
+  private readonly client: OpenAI;
+  private readonly model: string;
+
+  constructor(options: OpenAIReviewerOptions) {
+    if (!options.apiKey && !options.client) {
+      throw new Error("OPENAI_API_KEY is required for OpenAIReviewer");
+    }
+    this.model = options.model;
+    this.client =
+      options.client ??
+      new OpenAI({
+        apiKey: options.apiKey,
+        baseURL: options.baseURL,
+      });
+  }
 
   async review(input: ReviewInput): Promise<CodeReviewResult> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an independent code reviewer for NEXORA. Never mark ACCEPT without evidence of passing tests. Do not invent test results.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify(input),
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: OPENAI_REVIEW_JSON_SCHEMA,
+    const completion = await this.client.chat.completions.parse({
+      model: this.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an independent code reviewer for NEXORA / NADS. " +
+            "Never mark ACCEPT without evidence of passing tests. " +
+            "Do not invent test results. Prefer REJECT or BLOCKED when evidence is incomplete. " +
+            "Never request or echo API keys or secrets.",
         },
-      }),
+        {
+          role: "user",
+          content: JSON.stringify(input),
+        },
+      ],
+      response_format: zodResponseFormat(CodeReviewResultSchema, "nads_code_review"),
+      temperature: 0,
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OpenAI review failed: ${response.status} ${text.slice(0, 400)}`);
+    const refusal = completion.choices[0]?.message?.refusal;
+    if (refusal) {
+      throw new Error(`OpenAI review refused: ${refusal.slice(0, 400)}`);
     }
 
-    const json = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new Error("OpenAI review returned empty content");
+    const parsed = completion.choices[0]?.message?.parsed;
+    if (!parsed) {
+      const raw = completion.choices[0]?.message?.content;
+      if (!raw) {
+        throw new Error("OpenAI review returned empty content");
+      }
+      return CodeReviewResultSchema.parse(JSON.parse(raw));
     }
-    return CodeReviewResultSchema.parse(JSON.parse(content));
+
+    return CodeReviewResultSchema.parse(parsed);
   }
+}
+
+/** Default model verified against this account; override via NADS_OPENAI_MODEL. */
+export const DEFAULT_NADS_OPENAI_MODEL = "gpt-4o-mini";
+
+export function resolveOpenAIModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.NADS_OPENAI_MODEL?.trim() || DEFAULT_NADS_OPENAI_MODEL;
+}
+
+/**
+ * Select reviewer for the control plane.
+ * - dry-run / missing key → HeuristicReviewer (no spend)
+ * - live + OPENAI_API_KEY → OpenAIReviewer (official SDK)
+ */
+export function createReviewerFromEnv(env: NodeJS.ProcessEnv = process.env): Reviewer {
+  const mode = (env.NADS_MODE ?? "dry-run").toLowerCase();
+  const key = env.OPENAI_API_KEY?.trim() ?? "";
+
+  if (mode !== "live" || !key) {
+    return new HeuristicReviewer();
+  }
+
+  return new OpenAIReviewer({
+    apiKey: key,
+    model: resolveOpenAIModel(env),
+    baseURL: env.OPENAI_API_BASE_URL?.trim() || undefined,
+  });
 }

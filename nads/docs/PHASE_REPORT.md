@@ -1,47 +1,53 @@
 # NADS Phase Report
 
-**Updated:** 2026-11-11 23:05 Europe/Amsterdam  
-**Branch:** `cursor/nads-orchestrator-5233`
+**Updated:** 2026-11-11 (Europe/Amsterdam)  
+**Branch:** `cursor/nads-openai-live-review-6aee` (from `cursor/nads-orchestrator-5233`)
 
-## Investigated
+## Investigated (this phase)
 
-- Root NEXORA SaaS layout (`src/`, Supabase migrations, Playwright)
-- Official Cursor Cloud Agents API v1 docs (public beta)
-- Cursor SDK skill (`@cursor/sdk`) — available alternative; NADS HTTP adapter targets REST `/v1`
-- OpenAI chat completions structured outputs for reviews
-- Worker has no Postgres/Redis — memory store used for verifiable dry-run
+- Prior NADS phases 1–2 on `/nads` (state machine, mock loop, raw-fetch OpenAI reviewer)
+- Official OpenAI Node SDK `openai@7.55.0` (requires Node `>=22`)
+- Structured Outputs via `chat.completions.parse` + `zodResponseFormat`
+- Docs: https://developers.openai.com/api/docs/guides/structured-outputs
+- GitHub REST adapter surface (draft PRs only; no production merge)
 
-## Built
+## Built / changed
 
 | Item | Path |
 |---|---|
-| Architecture | `nads/docs/ARCHITECTURE.md` |
-| SQL schema | `nads/db/migrations/001_init.sql` |
-| State machine | `nads/src/state-machine.ts` |
-| Cursor HTTP adapter | `nads/src/adapters/cursor-http-adapter.ts` |
-| Mock Cursor | `nads/src/adapters/mock-cursor-adapter.ts` |
-| Reviewers | `nads/src/adapters/openai-reviewer.ts` |
-| Loop | `nads/src/orchestrator/loop.ts` |
-| CLI | `nads/src/cli.ts` |
-| Tests | `nads/tests/*.test.ts` |
+| Official OpenAI SDK dependency | `nads/package.json` (not root SaaS) |
+| SDK OpenAIReviewer | `nads/src/adapters/openai-reviewer.ts` |
+| Reviewer factory (`NADS_MODE`) | `createReviewerFromEnv` |
+| Strict review JSON Schema | `nads/src/review/schema.ts` |
+| HTTP GitHub adapter | `nads/src/adapters/github-adapter.ts` |
+| CLI: `review-smoke`, `github-status`, `reviewer-mode` | `nads/src/cli.ts` |
+| Unit tests | `nads/tests/openai-reviewer.test.ts`, `github-adapter.test.ts` |
 
 ## Tests executed (this worker)
 
 | Command | Result |
 |---|---|
-| `cd nads && npm test` | **PASS** — 6/6 (state machine + mock loop) |
+| `cd nads && npm test` | **PASS** — 18/18 |
 | `cd nads && npm run typecheck` | **PASS** |
 | `cd nads && npm run dry-run` | **PASS** — decisions `REJECT` → `ACCEPT`, final `NEXT_TASK` |
+| `cd nads && npm run review-smoke` | **PASS** — one live call, model `gpt-4o-mini`, decision `ACCEPT`, ~2.5s |
+| `cd nads && npm run github-status` | **PASS** — correctly reports unconfigured (no `GITHUB_TOKEN`) |
+| Root `package.json` openai dep | **Absent** (SDK only under `/nads`) |
 
-## Not verified / blocked
+## Security notes
 
-- Live `POST https://api.cursor.com/v1/agents` — **GEBLOKKEERD** (no `CURSOR_API_KEY`)
-- Live OpenAI review — **GEBLOKKEERD** (no `OPENAI_API_KEY`)
-- Postgres migration apply — no `psql` on worker
-- Redis/BullMQ workers — not installed
-- Dashboard UI — not started
-- Cursor v1 webhooks — not available per official docs (“coming soon”)
+- `openai` installed only under `/nads` — not in the Next.js/browser dependency tree
+- CLI redacts `sk-` / `ghp_` / `github_pat_` patterns in printed output
+- Errors never intentionally echo Authorization headers or API keys
+- GitHub adapter creates **draft** PRs only; no auto-merge / production deploy
+
+## Still blocked / next
+
+- Live Cursor `POST /v1/agents` — needs `CURSOR_API_KEY`
+- Postgres/Redis/BullMQ production workers
+- Development Control Center UI
+- Live GitHub calls — needs `GITHUB_TOKEN` (adapter ready; `github-status` reports config)
 
 ## Next phase
 
-Wire GitHub adapter + optional live Cursor smoke behind `NADS_MODE=live`, then dashboard skeleton.
+Wire live Cursor provider selection behind `NADS_MODE=live` + `CURSOR_API_KEY`, then dashboard skeleton.

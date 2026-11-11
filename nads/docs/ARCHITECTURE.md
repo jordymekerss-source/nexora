@@ -58,13 +58,16 @@ Adapter interface: `CursorAgentProvider` → `HttpCursorAgentProvider` (real) / 
 
 ### OpenAI API
 
-- `POST https://api.openai.com/v1/chat/completions` with JSON schema / structured outputs for reviews.  
-- Model pinned via `NADS_OPENAI_MODEL` (default configurable; never hardcode secrets).
+- Official Node SDK: `openai` (installed **only** in `/nads`, never in the SaaS frontend bundle).  
+- Chat Completions Structured Outputs: `client.chat.completions.parse` + `zodResponseFormat`.  
+- Docs: [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [openai-node](https://github.com/openai/openai-node).  
+- Model pinned via `NADS_OPENAI_MODEL` (default `gpt-4o-mini`; never hardcode secrets).  
+- `NADS_MODE=dry-run` → `HeuristicReviewer`; `live` + key → `OpenAIReviewer`.
 
 ### GitHub
 
-- REST via Octokit patterns: branches, PRs, checks, webhooks.  
-- Never push to `main` / production. Integration branch only (e.g. `develop` / `cursor/integration`).
+- Official REST (`https://api.github.com`) via `HttpGitHubAdapter` when `GITHUB_TOKEN` is set.  
+- Draft PRs only in this phase; never auto-merge to `main` / production. Integration branch only (e.g. `cursor/integration`).
 
 ## 4. Components
 
@@ -107,12 +110,12 @@ Task READY
 
 | Phase | Status |
 |---|---|
-| 1 Architecture + audit | This doc |
-| 2 DB + orchestrator basis | In progress in `/nads` |
-| 3 GitHub adapter | Stub + interface |
+| 1 Architecture + audit | Done |
+| 2 DB + orchestrator basis | Done (memory store + SQL schema) |
+| 3 GitHub adapter | HTTP adapter + env factory (token-gated) |
 | 4 Cursor HTTP adapter | Implemented against v1 docs |
-| 5 GPT reviewer | Structured schema + client |
-| 6–10 | Test infra, recovery, dashboard, security, e2e loop |
+| 5 GPT reviewer | Official SDK + strict schema + review-smoke |
+| 6–10 | Live Cursor wiring, recovery polish, dashboard, security, e2e loop |
 
 ## 8. Acceptance criteria (Phase 1–2)
 
@@ -120,5 +123,7 @@ Task READY
 - [x] Separate `/nads` package not imported by SaaS runtime  
 - [x] State machine rejects illegal transitions (unit tested)  
 - [x] Mock end-to-end loop: create → reject → recover → accept  
-- [ ] Live Cursor/OpenAI calls — require API keys (not available in this worker by default)  
+- [x] Official OpenAI SDK reviewer path (server-side `/nads` only)  
+- [x] GitHub HTTP adapter (draft PRs; requires `GITHUB_TOKEN` for live)  
+- [ ] Live Cursor calls — require `CURSOR_API_KEY`  
 - [ ] PostgreSQL/Redis/BullMQ production wiring — schema ready; runtime memory for dry-run  
