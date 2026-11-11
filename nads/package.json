@@ -1,0 +1,27 @@
+{
+  "name": "@nexora/nads",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NEXORA Autonomous Development System — control plane (separate from SaaS app)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "tsx src/cli.ts",
+    "dry-run": "tsx src/cli.ts dry-run"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
