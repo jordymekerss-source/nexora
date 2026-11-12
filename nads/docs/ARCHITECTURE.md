@@ -21,12 +21,12 @@
 A dedicated orchestrator that:
 
 1. Selects the next development task from a prioritized roadmap.  
-2. Generates a Cursor prompt (OpenAI planner).  
-3. Starts a Cursor Cloud Agent run via **verified** `https://api.cursor.com/v1` endpoints.  
-4. Collects run status, artifacts, git refs.  
-5. Runs / records quality gates (typecheck, unit, e2e) when available.  
+2. Generates a structured prompt (OpenAI planner).  
+3. **Preferred:** dispatches via Cursor **Automation webhook** (`NADS_EXECUTOR=automation`) — not prepaid-gated `POST /v1/agents`.  
+4. Completes via **GitHub webhooks** (PR/checks) + optional automation callback.  
+5. **Optional explicit fallback:** `NADS_EXECUTOR=cursor` → `HttpCursorAgentProvider` (never automatic).  
 6. Sends evidence to OpenAI structured review → `ACCEPT` / `REJECT` / `BLOCKED`.  
-7. On reject: recovery prompt + continue run (max retries).  
+7. On reject: recovery dispatch (max retries).  
 8. On accept: mark task complete, pick next.  
 9. Honors emergency stop, budgets, locks, idempotent events.
 
@@ -52,9 +52,10 @@ Auth: Basic (`API_KEY:`) or Bearer.
 | POST | `/v1/agents/{id}/archive` | Archive |
 | DELETE | `/v1/agents/{id}` | Delete |
 
-**Webhooks:** docs state webhooks are *coming soon* for v1; legacy v0 still has them. NADS therefore uses **polling + GitHub webhooks**, not invented Cursor webhooks.
+**Cloud Agents API webhooks:** still “coming soon” for v1. NADS preferred completion bus is **GitHub webhooks** (+ Automation webhook for dispatch).
 
-Adapter interface: `CursorAgentProvider` → `HttpCursorAgentProvider` (real) / `MockCursorAgentProvider` (tests / dry-run).
+Executors: `TaskExecutor` → `automation` (preferred) | `cursor` (explicit optional) | `mock`.  
+`HttpCursorAgentProvider` retained for `NADS_EXECUTOR=cursor` only.
 
 ### OpenAI API
 
@@ -87,13 +88,15 @@ nads/
 
 ```
 Task READY
-  → CONTEXT_GATHERING (repo metadata / prior reviews)
-  → PROMPT_CREATED (OpenAI planner or template)
-  → AGENT_QUEUED / AGENT_RUNNING (Cursor POST /v1/agents or /runs)
-  → TESTING (record commands/results; optional local gates)
+  → CONTEXT_GATHERING
+  → PROMPT_CREATED
+  → AGENT_QUEUED / AGENT_RUNNING
+       preferred: AutomationExecutor.dispatch (webhook; disabled until enabled)
+       optional: HttpCursorAgentProvider (explicit NADS_EXECUTOR=cursor only)
+  → GitHub webhook completion (PR/checks) → TESTING
   → REVIEWING (OpenAI structured review)
   → ACCEPTED → NEXT_TASK
-     or REVISION_REQUIRED → PROMPT_CREATED (≤ max_retries)
+     or REVISION_REQUIRED → repair automation dispatch (≤ max_retries)
      or BLOCKED / STOPPED
 ```
 

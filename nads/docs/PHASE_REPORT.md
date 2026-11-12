@@ -1,65 +1,52 @@
 # NADS Phase Report
 
-**Updated:** 2026-11-11 (Europe/Amsterdam)  
+**Updated:** 2026-11-12 (Europe/Amsterdam)  
 **Branch:** `cursor/nads-openai-live-review-6aee`
 
-## Phase 3 focus — Live Cursor Cloud Agent integration
+## P0+P1 — Automation executor prep (inactive)
 
-### Investigated
+### Decision
 
-- Existing `/nads` provider interface, HTTP adapter stub, mock loop, journal SQL schema
-- Official Cursor Cloud Agents API v1 docs: https://prod.cursor.com/docs/cloud-agent/api/endpoints
-- Auth: Basic (`-u KEY:`) or Bearer
-- Idempotent create via client `agentId` → `409 agent_id_conflict`
-- `409 agent_busy` / steer delivery / SSE `Last-Event-ID` resume / `410 stream_expired`
-- GitHub adapter: keep for listing/checks; prefer Cursor `autoCreatePR` to avoid duplicate PRs
+Preferred execution: **Automation webhook + GitHub event completion**.  
+`HttpCursorAgentProvider` remains an **explicit optional** `NADS_EXECUTOR=cursor` fallback.  
+**No automatic fallback** to prepaid-gated `POST /v1/agents`.
 
-### Built / changed
+### Built
 
 | Item | Path |
 |---|---|
-| Typed Cursor errors | `nads/src/adapters/cursor-errors.ts` |
-| Expanded provider types | `nads/src/adapters/cursor-agent-provider.ts` |
-| Production HTTP provider | `nads/src/adapters/cursor-http-adapter.ts` |
-| Fail-closed factory | `nads/src/adapters/cursor-factory.ts` |
-| Execution journal (restart recovery) | `nads/src/db/execution-journal.ts` |
-| Loop waits for terminal runs + journal | `nads/src/orchestrator/loop.ts` |
-| CLI `cursor-smoke` / `provider-mode` | `nads/src/cli.ts` |
-| Unit + gate tests | `nads/tests/cursor-*.test.ts`, `execution-journal.test.ts` |
+| Dispatch payload contracts | `nads/src/contracts/automation-payload.ts` |
+| `TaskExecutor` + factory | `nads/src/adapters/executor.ts` |
+| `AutomationExecutor` (send gated) | `nads/src/adapters/automation-executor.ts` |
+| GitHub webhook verify + replay | `nads/src/ingress/github-webhook.ts` |
+| Automation callback verify | `nads/src/ingress/automation-callback.ts` |
+| Async dispatch/complete helpers | `nads/src/orchestrator/automation-lifecycle.ts` |
+| GitHub PR/files reads | `nads/src/adapters/github-adapter.ts` |
+| SQL additive migration | `nads/db/migrations/002_automation_executor.sql` |
+| Tests | `executor-selection`, `automation-executor`, `github-webhook` |
 
-### Endpoints used (verified)
+### Activation state
 
-- `POST /v1/agents`
-- `GET /v1/agents/{id}`
-- `POST /v1/agents/{id}/runs`
-- `GET /v1/agents/{id}/runs`
-- `GET /v1/agents/{id}/runs/{runId}`
-- `GET /v1/agents/{id}/runs/{runId}/stream`
-- `POST /v1/agents/{id}/runs/{runId}/cancel`
+- `NADS_AUTOMATION_ENABLED=false` (default)
+- `NADS_ALLOW_CURSOR_API_SMOKE=false` (default)
+- No live Automation jobs
+- No `POST /v1/agents` from preferred flows
 
 ### Tests (this worker)
 
 | Command | Result |
 |---|---|
-| `cd nads && npm test` | **PASS** — 39/39 |
+| `cd nads && npm test` | **PASS** — 55/55 |
 | `cd nads && npm run typecheck` | **PASS** |
-| `cd nads && npm run dry-run` | **PASS** — `REJECT` → `ACCEPT` |
-| `NADS_MODE=live npm run provider-mode` | **PASS** — resolves `HttpCursorAgentProvider` with key present |
-| `cd nads && npm run cursor-smoke` | **BLOCKED** — live `POST /v1/agents` returned `400 usage_limit_exceeded` (prepaid balance used up). Auth succeeded; no agent created. No automatic retry. |
+| `cd nads && npm run dry-run` | **PASS** |
+| `cd nads && npm run executor-status` | mock; automationEnabled=false; no auto cursor fallback |
+| `cd nads && npm run automation-dispatch-dry` | disabled send; no `/v1/agents` |
+| `cd nads && npm run cursor-smoke` | **BLOCKED** unless `NADS_ALLOW_CURSOR_API_SMOKE=true` |
 
-### Live API evidence (redacted)
+### Remaining blockers (activation)
 
-- `CURSOR_API_KEY`: accessible and non-empty after user secret entry
-- Request: `POST https://api.cursor.com/v1/agents` (Basic auth)
-- Response: `400` / `usage_limit_exceeded` — prepaid balance exhausted
-- Conclusion: integration wiring + credentials OK; Cursor billing must be topped up before a full agent/run/branch smoke can PASS
-
-### Remaining blockers
-
-- Cursor prepaid balance / auto top-up required for live agent execution
-- Postgres/Redis production workers still optional (journal file bridges restart recovery)
-- Dashboard UI not started
-
-### Next phase
-
-Top up Cursor billing → re-run `npm run cursor-smoke` once for live agent/branch evidence → Control Center dashboard skeleton.
+1. Confirm Automations + webhook available on the account plan  
+2. Create Automation, pin Composer/Grok, copy URL/key  
+3. Configure GitHub webhook secret to NADS ingress when hosted  
+4. Optionally enable on-demand with **low hard limit** — do **not** prepaid top-up / auto top-up for NADS  
+5. Flip `NADS_AUTOMATION_ENABLED=true` only after eligibility verified  

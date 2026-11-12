@@ -16,6 +16,12 @@ export type DevelopmentTask = {
   assignedAgentId?: string;
   lastPrompt?: string;
   lastResult?: string;
+  executorKind?: "automation" | "cursor" | "mock";
+  externalExecutionId?: string;
+  prNumber?: number;
+  prUrl?: string;
+  headBranch?: string;
+  dispatchIdempotencyKey?: string;
 };
 
 export type DevelopmentEvent = {

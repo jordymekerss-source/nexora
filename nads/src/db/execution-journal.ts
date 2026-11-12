@@ -16,6 +16,8 @@ export type JournalEntry = {
   promptHash?: string;
   branchName?: string;
   prUrl?: string;
+  executorKind?: "automation" | "cursor" | "mock";
+  prNumber?: number;
   updatedAt: string;
 };
 

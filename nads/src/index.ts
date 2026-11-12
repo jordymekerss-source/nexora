@@ -11,9 +11,32 @@ export {
   createCursorProviderFromEnv,
   cursorAgentIdForTask,
 } from "./adapters/cursor-factory.js";
+export {
+  createExecutorFromEnv,
+  assertNoAutomaticCursorFallback,
+  type TaskExecutor,
+  type ExecutorKind,
+} from "./adapters/executor.js";
+export { AutomationExecutor, MockAutomationExecutor } from "./adapters/automation-executor.js";
 export { CursorApiError, isTerminalRunStatus, isActiveRunStatus } from "./adapters/cursor-errors.js";
 export { HeuristicReviewer, OpenAIReviewer, createReviewerFromEnv } from "./adapters/openai-reviewer.js";
 export { MemoryStore } from "./db/memory-store.js";
 export { ExecutionJournal } from "./db/execution-journal.js";
 export { runTaskLoop } from "./orchestrator/loop.js";
+export {
+  dispatchAutomationTask,
+  completeAutomationTaskFromGitHub,
+} from "./orchestrator/automation-lifecycle.js";
 export { CodeReviewResultSchema } from "./review/schema.js";
+export {
+  AutomationDispatchPayloadSchema,
+  AutomationCallbackPayloadSchema,
+  nadsTaskMarker,
+  parseNadsTaskIdFromText,
+} from "./contracts/automation-payload.js";
+export {
+  verifyGitHubWebhookSignature,
+  isAutomationCompletionEvent,
+  GitHubWebhookError,
+} from "./ingress/github-webhook.js";
+export { verifyAutomationCallback, AutomationCallbackError } from "./ingress/automation-callback.js";

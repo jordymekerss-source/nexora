@@ -8,10 +8,13 @@ import {
 } from "./adapters/openai-reviewer.js";
 import { createGitHubAdapterFromEnv, UnconfiguredGitHubAdapter } from "./adapters/github-adapter.js";
 import { createCursorProviderFromEnv } from "./adapters/cursor-factory.js";
+import { createExecutorFromEnv } from "./adapters/executor.js";
 import { HttpCursorAgentProvider } from "./adapters/cursor-http-adapter.js";
 import { MemoryStore } from "./db/memory-store.js";
 import { ExecutionJournal } from "./db/execution-journal.js";
 import { runTaskLoop } from "./orchestrator/loop.js";
+import { dispatchAutomationTask } from "./orchestrator/automation-lifecycle.js";
+import { AutomationExecutor } from "./adapters/automation-executor.js";
 
 function redactSecrets(value: unknown): unknown {
   if (typeof value === "string") {
@@ -25,7 +28,7 @@ function redactSecrets(value: unknown): unknown {
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      if (/key|token|secret|password|authorization/i.test(key)) {
+      if (/^(?:.*(?:token|secret|password|authorization).*|apiKey|webhookKey)$/i.test(key)) {
         out[key] = "[REDACTED]";
       } else {
         out[key] = redactSecrets(nested);
@@ -224,6 +227,31 @@ async function showProviderMode(): Promise<void> {
       mode,
       provider: providerName,
       hasCursorKey,
+      note: "Deprecated entry — prefer executor-status / NADS_EXECUTOR",
+      error,
+    }),
+  );
+  if (error) process.exitCode = 2;
+}
+
+async function showExecutorStatus(): Promise<void> {
+  const automation = AutomationExecutor.fromEnv();
+  let executorKind = "unresolved";
+  let error: string | null = null;
+  try {
+    const executor = createExecutorFromEnv();
+    executorKind = executor.kind;
+  } catch (err: unknown) {
+    error = err instanceof Error ? err.message : "executor resolve failed";
+  }
+  console.log(
+    JSON.stringify({
+      NADS_EXECUTOR: process.env.NADS_EXECUTOR ?? "mock",
+      resolvedExecutor: executorKind,
+      automationEnabled: automation.isEnabled(),
+      automationCredentialsPresent: automation.hasCredentials(),
+      preferred: "automation",
+      automaticCursorFallback: false,
       error,
     }),
   );
@@ -231,11 +259,74 @@ async function showProviderMode(): Promise<void> {
 }
 
 /**
- * Controlled live Cursor Cloud Agent integration probe.
- * Reports BLOCKED (not PASS) when CURSOR_API_KEY is missing.
- * Never modifies main; uses workOnCurrentBranch=false + autoCreatePR=false by default.
+ * Validate automation dispatch path without sending (NADS_AUTOMATION_ENABLED must stay false).
+ * Never calls POST /v1/agents.
+ */
+async function automationDispatchDry(): Promise<void> {
+  if ((process.env.NADS_AUTOMATION_ENABLED ?? "false").toLowerCase() === "true") {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error:
+          "Refusing automation-dispatch-dry while NADS_AUTOMATION_ENABLED=true — disable the flag for prep dry validation",
+      }),
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const store = new MemoryStore();
+  const task = store.seedTask({
+    title: "Automation dry dispatch",
+    description: "Prep-only validation of automation executor",
+    acceptanceCriteria: ["No network send", "No /v1/agents"],
+  });
+  const executor = createExecutorFromEnv({
+    ...process.env,
+    NADS_EXECUTOR: process.env.NADS_EXECUTOR ?? "automation",
+    NADS_AUTOMATION_ENABLED: "false",
+  });
+
+  const outcome = await dispatchAutomationTask({
+    store,
+    executor,
+    taskId: task.id,
+    repoUrl: process.env.NADS_REPO_URL ?? "https://github.com/jordymekerss-source/nexora",
+  });
+
+  console.log(
+    JSON.stringify(
+      redactSecrets({
+        ok: outcome.status === "disabled" || outcome.status === "idempotent_replay",
+        outcome,
+        taskStatus: store.tasks.find((row) => row.id === task.id)?.status,
+        note: "Payload validated; network send disabled. No Cloud Agents API call.",
+      }),
+      null,
+      2,
+    ),
+  );
+}
+
+/**
+ * OPTIONAL fallback probe only. Refuses unless NADS_ALLOW_CURSOR_API_SMOKE=true.
+ * Preferred architecture does not use this path.
  */
 async function cursorSmoke(): Promise<void> {
+  if ((process.env.NADS_ALLOW_CURSOR_API_SMOKE ?? "").toLowerCase() !== "true") {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        status: "BLOCKED",
+        reason:
+          "cursor-smoke is an optional fallback probe and is disabled by default. Preferred executor is automation. Set NADS_ALLOW_CURSOR_API_SMOKE=true only for explicit prepaid/API testing.",
+        callsPostV1Agents: true,
+      }),
+    );
+    process.exitCode = 0;
+    return;
+  }
+
   const key = process.env.CURSOR_API_KEY?.trim() ?? "";
   if (!key) {
     console.log(
@@ -414,13 +505,15 @@ const runners: Record<string, () => Promise<void>> = {
   "github-status": githubStatus,
   "reviewer-mode": showReviewerMode,
   "provider-mode": showProviderMode,
+  "executor-status": showExecutorStatus,
+  "automation-dispatch-dry": automationDispatchDry,
   "cursor-smoke": cursorSmoke,
 };
 
 const run = runners[command];
 if (!run) {
   console.error(
-    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | cursor-smoke`,
+    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | cursor-smoke`,
   );
   process.exit(1);
 }

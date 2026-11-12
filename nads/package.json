@@ -15,6 +15,8 @@
     "github-status": "tsx src/cli.ts github-status",
     "reviewer-mode": "tsx src/cli.ts reviewer-mode",
     "provider-mode": "tsx src/cli.ts provider-mode",
+    "executor-status": "tsx src/cli.ts executor-status",
+    "automation-dispatch-dry": "tsx src/cli.ts automation-dispatch-dry",
     "cursor-smoke": "tsx src/cli.ts cursor-smoke"
   },
   "engines": {

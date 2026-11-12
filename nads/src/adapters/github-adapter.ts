@@ -18,6 +18,21 @@ export type CheckConclusion = {
   conclusion: string | null;
 };
 
+export type PullRequestDetail = PullRequestSummary & {
+  body: string;
+  state: string;
+  draft: boolean;
+  headSha: string;
+};
+
+export type PullRequestFile = {
+  filename: string;
+  status: string;
+  patch?: string;
+  additions: number;
+  deletions: number;
+};
+
 export interface GitHubAdapter {
   createBranch(name: string, fromRef: string): Promise<void>;
   listOpenPullRequests(): Promise<PullRequestSummary[]>;
@@ -28,6 +43,8 @@ export interface GitHubAdapter {
     body: string;
   }): Promise<PullRequestSummary>;
   getCheckConclusions(ref: string): Promise<CheckConclusion[]>;
+  getPullRequest?(number: number): Promise<PullRequestDetail>;
+  listPullRequestFiles?(number: number): Promise<PullRequestFile[]>;
 }
 
 /** Safe stub until token-backed client is configured. */
@@ -42,6 +59,12 @@ export class UnconfiguredGitHubAdapter implements GitHubAdapter {
     throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
   }
   async getCheckConclusions(): Promise<CheckConclusion[]> {
+    throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
+  }
+  async getPullRequest(): Promise<PullRequestDetail> {
+    throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
+  }
+  async listPullRequestFiles(): Promise<PullRequestFile[]> {
     throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
   }
 }
@@ -66,6 +89,24 @@ type GhPrResponse = {
 };
 type GhCheckRunsResponse = {
   check_runs: Array<{ name: string; conclusion: string | null }>;
+};
+type GhPrDetailResponse = {
+  number: number;
+  title: string;
+  html_url: string;
+  merged_at: string | null;
+  body: string | null;
+  state: string;
+  draft?: boolean;
+  head: { ref: string; sha: string };
+  base: { ref: string };
+};
+type GhPrFileResponse = {
+  filename: string;
+  status: string;
+  patch?: string;
+  additions: number;
+  deletions: number;
 };
 
 /**
@@ -174,6 +215,36 @@ export class HttpGitHubAdapter implements GitHubAdapter {
     return data.check_runs.map((run) => ({
       name: run.name,
       conclusion: run.conclusion,
+    }));
+  }
+
+  async getPullRequest(number: number): Promise<PullRequestDetail> {
+    const pr = await this.request<GhPrDetailResponse>("GET", this.repoPath(`/pulls/${number}`));
+    return {
+      number: pr.number,
+      title: pr.title,
+      headRef: pr.head.ref,
+      baseRef: pr.base.ref,
+      url: pr.html_url,
+      merged: Boolean(pr.merged_at),
+      body: pr.body ?? "",
+      state: pr.state,
+      draft: Boolean(pr.draft),
+      headSha: pr.head.sha,
+    };
+  }
+
+  async listPullRequestFiles(number: number): Promise<PullRequestFile[]> {
+    const files = await this.request<GhPrFileResponse[]>(
+      "GET",
+      this.repoPath(`/pulls/${number}/files?per_page=100`),
+    );
+    return files.map((file) => ({
+      filename: file.filename,
+      status: file.status,
+      patch: file.patch,
+      additions: file.additions,
+      deletions: file.deletions,
     }));
   }
 }

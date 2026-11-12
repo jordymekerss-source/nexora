@@ -7,25 +7,19 @@ Do not import `/nads` from `/src` application code. Do not add the OpenAI SDK to
 
 ## What works now
 
-- Architecture doc with **verified** Cursor Cloud Agents API v1 endpoints
-- PostgreSQL control-plane schema (`db/migrations/001_init.sql`)
-- Explicit task state machine with illegal-transition guards
-- Production `HttpCursorAgentProvider` (create/continue/get/list/stream/cancel/wait)
-- Fail-closed `createCursorProviderFromEnv()` when `NADS_MODE=live` without `CURSOR_API_KEY`
-- Execution journal (`.nads/execution-journal.json`) for restart recovery / idempotent agent ids
-- Mock Cursor provider for dry-run
-- Heuristic reviewer (dry-run) + **official OpenAI SDK** structured reviewer (`openai@7`)
-- HTTP GitHub adapter (draft PRs; token-gated) — prefer Cursor `autoCreatePR` to avoid duplicate PRs
-- Autonomous mock loop: create → REJECT → recovery → ACCEPT (max 3 repairs)
-- Unit tests + CLI `dry-run` / `review-smoke` / `cursor-smoke`
+- Preferred executor: **`NADS_EXECUTOR=automation`** (webhook dispatch + GitHub completion) — **disabled by default**
+- Optional fallback: **`NADS_EXECUTOR=cursor`** → `HttpCursorAgentProvider` (explicit only; never auto-fallback)
+- Official OpenAI SDK structured reviewer (`openai@7`) under `/nads` only
+- GitHub REST adapter + webhook signature verification / replay protection
+- Execution journal, state machine, mock dry-run loop (REJECT → ACCEPT)
+- CLI: `dry-run`, `executor-status`, `automation-dispatch-dry`, `review-smoke`
 
 ## What is not live yet
 
-- Live Cursor smoke **PASS** until `CURSOR_API_KEY` is provisioned (`cursor-smoke` reports **BLOCKED**)
+- Automation webhook send (`NADS_AUTOMATION_ENABLED=false` until account eligibility verified)
+- Hosted GitHub → NADS ingress deployment
 - PostgreSQL + Redis + BullMQ production workers
 - Development Control Center UI
-- GitHub App merge automation
-- Cursor v1 webhooks (docs: coming soon — polling + SSE used instead)
 
 ## Setup
 
@@ -44,11 +38,14 @@ Optional live structured review (one call, no retry):
 npm run review-smoke
 ```
 
-Live Cursor probe (reports **BLOCKED** if `CURSOR_API_KEY` missing — never silent PASS):
+Preferred prep checks (no prepaid API):
 
 ```bash
-npm run cursor-smoke
+npm run executor-status
+npm run automation-dispatch-dry
 ```
+
+Optional Cursor API smoke (calls `POST /v1/agents`) — disabled unless `NADS_ALLOW_CURSOR_API_SMOKE=true`.
 
 ## Environment
 

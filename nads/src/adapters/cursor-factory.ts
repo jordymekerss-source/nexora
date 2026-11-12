@@ -3,11 +3,14 @@ import type { CursorAgentProvider } from "./cursor-agent-provider.js";
 import { MockCursorAgentProvider } from "./mock-cursor-adapter.js";
 
 /**
- * Resolve Cursor provider from env.
+ * @deprecated Prefer createExecutorFromEnv() with NADS_EXECUTOR.
  *
- * - dry-run → MockCursorAgentProvider (no spend)
- * - live without CURSOR_API_KEY → **fail closed** (never silent mock fallback)
- * - live with key → HttpCursorAgentProvider
+ * Explicit Cursor Cloud Agents API provider resolution ONLY.
+ * Must never be used as an automatic fallback from the automation executor.
+ *
+ * - dry-run → MockCursorAgentProvider
+ * - live without CURSOR_API_KEY → fail closed
+ * - live with key → HttpCursorAgentProvider (may hit prepaid-gated POST /v1/agents)
  */
 export function createCursorProviderFromEnv(
   env: NodeJS.ProcessEnv = process.env,
