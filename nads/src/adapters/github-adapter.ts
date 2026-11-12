@@ -68,12 +68,25 @@ export interface GitHubAdapter {
    * Requires GITHUB_TOKEN-backed adapter.
    */
   verifyTaskPullRequest(input: {
+    taskId?: string;
     taskMarker: string;
     expectedOwner: string;
     expectedRepo: string;
     prNumber?: number | null;
     expectedBranchPrefix?: string | null;
   }): Promise<TaskPullRequestVerification>;
+}
+
+/** Parse owner/repo from a github.com HTTPS or SSH URL. */
+export function parseGithubRepoUrl(
+  repoUrl: string,
+): { owner: string; repo: string } | null {
+  const trimmed = repoUrl.trim();
+  const https = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?\/?$/i);
+  if (https) return { owner: https[1]!, repo: https[2]! };
+  const ssh = trimmed.match(/^git@github\.com:([^/]+)\/([^/.]+?)(?:\.git)?$/i);
+  if (ssh) return { owner: ssh[1]!, repo: ssh[2]! };
+  return null;
 }
 
 /** Safe stub until token-backed client is configured. */
@@ -100,7 +113,21 @@ export class UnconfiguredGitHubAdapter implements GitHubAdapter {
     throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
   }
   async verifyTaskPullRequest(): Promise<TaskPullRequestVerification> {
-    throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
+    return {
+      ok: false,
+      branchExists: false,
+      prFound: false,
+      markerPresent: false,
+      repositoryMatch: false,
+      notMerged: false,
+      draft: null,
+      prNumber: null,
+      prUrl: null,
+      headBranch: null,
+      headSha: null,
+      checks: [],
+      errors: ["missing_github_token"],
+    };
   }
 }
 
@@ -217,6 +244,7 @@ export class HttpGitHubAdapter implements GitHubAdapter {
   }
 
   async verifyTaskPullRequest(input: {
+    taskId?: string;
     taskMarker: string;
     expectedOwner: string;
     expectedRepo: string;
@@ -229,7 +257,7 @@ export class HttpGitHubAdapter implements GitHubAdapter {
       this.repo.toLowerCase() === input.expectedRepo.toLowerCase();
     if (!ownerMatch) {
       errors.push(
-        `repository mismatch: adapter ${this.owner}/${this.repo} ≠ expected ${input.expectedOwner}/${input.expectedRepo}`,
+        `repository_mismatch: adapter ${this.owner}/${this.repo} ≠ expected ${input.expectedOwner}/${input.expectedRepo}`,
       );
     }
 
@@ -240,33 +268,66 @@ export class HttpGitHubAdapter implements GitHubAdapter {
       } catch (error: unknown) {
         errors.push(error instanceof Error ? error.message.slice(0, 200) : "getPullRequest failed");
       }
-    } else {
+    } else if (input.expectedBranchPrefix) {
       const open = await this.listOpenPullRequests();
-      const match = open.find((row) =>
-        input.expectedBranchPrefix ? row.headRef.startsWith(input.expectedBranchPrefix) : false,
-      );
+      const match = open.find((row) => row.headRef.startsWith(input.expectedBranchPrefix!));
       if (match?.number) {
         pr = (await this.getPullRequest?.(match.number)) ?? null;
       }
     }
 
-    const markerPresent = Boolean(
-      pr &&
-        (pr.body.includes(input.taskMarker) ||
-          pr.title.includes(input.taskMarker) ||
-          pr.headRef.includes(input.taskMarker.replace("nads-task:", ""))),
-    );
-    if (pr && !markerPresent) {
-      errors.push("task marker missing from PR body/title/branch");
+    // Marker must appear in the PR body — title/branch alone is not enough (anti-spoof).
+    const markerInBody = Boolean(pr?.body.includes(input.taskMarker));
+    const spoofedMarker =
+      Boolean(pr) &&
+      !markerInBody &&
+      Boolean(
+        pr!.title.includes(input.taskMarker) ||
+          pr!.headRef.includes(input.taskMarker.replace("nads-task:", "")),
+      );
+    if (spoofedMarker) {
+      errors.push("spoofed_marker: marker found outside PR body without body correlation");
     }
-    if (!pr) {
-      errors.push("pull request not found");
-    }
-    if (pr?.merged) {
-      errors.push("pull request is already merged");
+    if (pr && !markerInBody) {
+      errors.push("task_marker_missing_from_pr_body");
     }
 
-    const branchName = pr?.headRef ?? input.expectedBranchPrefix ?? null;
+    if (input.taskId && pr?.body) {
+      const foreign = pr.body.match(
+        /nads-task:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/gi,
+      );
+      if (foreign) {
+        for (const hit of foreign) {
+          const id = hit.replace(/^nads-task:/i, "");
+          if (id.toLowerCase() !== input.taskId.toLowerCase()) {
+            errors.push("wrong_task_marker");
+            break;
+          }
+        }
+      }
+    }
+
+    if (!pr) {
+      errors.push("pull_request_not_found");
+    }
+    if (pr?.merged) {
+      errors.push("pull_request_merged");
+    }
+    if (pr && pr.state !== "open") {
+      errors.push(`pull_request_not_open:${pr.state}`);
+    }
+
+    const branchName = pr?.headRef ?? null;
+    if (input.expectedBranchPrefix) {
+      if (!branchName) {
+        errors.push("missing_head_branch");
+      } else if (!branchName.startsWith(input.expectedBranchPrefix)) {
+        errors.push(
+          `wrong_branch_prefix: head ${branchName} does not start with ${input.expectedBranchPrefix}`,
+        );
+      }
+    }
+
     let branchExists = false;
     if (branchName) {
       try {
@@ -276,19 +337,23 @@ export class HttpGitHubAdapter implements GitHubAdapter {
       }
     }
     if (branchName && !branchExists) {
-      errors.push(`branch not found: ${branchName}`);
+      errors.push(`branch_missing:${branchName}`);
     }
 
     const checks =
       pr?.headSha != null ? await this.getCheckConclusions(pr.headSha).catch(() => []) : [];
 
-    const notMerged = Boolean(pr && !pr.merged);
+    const notMerged = Boolean(pr && !pr.merged && pr.state === "open");
+    const markerPresent = markerInBody;
     const ok =
       ownerMatch &&
       Boolean(pr) &&
       markerPresent &&
       notMerged &&
-      (branchName ? branchExists : true) &&
+      (branchName ? branchExists : false) &&
+      (input.expectedBranchPrefix
+        ? Boolean(branchName?.startsWith(input.expectedBranchPrefix))
+        : true) &&
       errors.length === 0;
 
     return {

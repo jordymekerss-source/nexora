@@ -31,16 +31,26 @@ export { ExecutionJournal } from "./db/execution-journal.js";
 export {
   MemoryWebhookReceiptStore,
   FileWebhookReceiptStore,
+  PostgresWebhookReceiptStore,
   createWebhookReceiptStoreFromEnv,
   payloadHashOf,
+  DEFAULT_COMPLETION_LEASE_TTL_MS,
   type WebhookReceiptStore,
+  type CompletionLease,
 } from "./db/webhook-receipts.js";
+export { applyNadsMigrations } from "./db/pg-migrate.js";
 export { runTaskLoop } from "./orchestrator/loop.js";
 export {
   dispatchAutomationTask,
   completeAutomationTaskFromGitHub,
   completeAutomationTaskFromCallback,
+  reconcileUncertainDispatch,
 } from "./orchestrator/automation-lifecycle.js";
+export {
+  isPreAcceptNetworkError,
+  isUncertainDispatchStatus,
+} from "./adapters/automation-executor.js";
+export { parseGithubRepoUrl } from "./adapters/github-adapter.js";
 export { CodeReviewResultSchema } from "./review/schema.js";
 export {
   AutomationDispatchPayloadSchema,

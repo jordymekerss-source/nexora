@@ -64,6 +64,8 @@ Later / optional:
 - `GITHUB_TOKEN`
 - `DATABASE_URL` / `REDIS_URL`
 
+**Production receipt store:** set `NADS_WEBHOOK_RECEIPT_STORE=postgres`, `DATABASE_URL`, and apply migrations `001`–`004`. See [`docs/DATABASE.md`](docs/DATABASE.md). File store is single-node only; memory is for tests.
+
 Default `NADS_MODE=dry-run` uses mocks and never spends provider budget.
 
 ## Security boundaries

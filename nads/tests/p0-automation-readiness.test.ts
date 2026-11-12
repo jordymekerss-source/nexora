@@ -157,19 +157,12 @@ describe("P0 AutomationExecutor reliability", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   }, 5000);
 
-  it("retries transient HTTP 503 then succeeds once", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        text: async () => "busy",
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({ id: "run-ok" }),
-      });
+  it("does not retry HTTP 503 (ambiguous server — no Cursor idempotency guarantee)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: async () => "busy",
+    });
     const executor = new AutomationExecutor({
       webhookUrl: "https://example.test/hook",
       webhookKey: "secret",
@@ -180,13 +173,11 @@ describe("P0 AutomationExecutor reliability", () => {
       sleepImpl: async () => undefined,
     });
     const result = await executor.dispatch(samplePayload());
-    expect(result.status).toBe("dispatched");
-    expect(result.executionId).toBe("run-ok");
-    expect(result.attempts).toBe(2);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    const body = JSON.parse(String((fetchImpl.mock.calls[0]?.[1] as RequestInit).body));
-    expect(body.context).toContain("NADS Automation task brief");
-    expect(body.nads.idempotencyKey).toBe(samplePayload().idempotencyKey);
+    expect(result.status).toBe("ambiguous_server_error");
+    expect(result.uncertain).toBe(true);
+    expect(result.sent).toBe(true);
+    expect(result.attempts).toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("does not retry authentication failures", async () => {
@@ -301,9 +292,12 @@ describe("P0 webhook receipts + concurrent completion", () => {
     ]);
 
     const handled = [one, two].filter((row) => row.handled);
-    const dupes = [one, two].filter((row) => row.reason === "duplicate_completion");
+    const blocked = [one, two].filter(
+      (row) =>
+        row.reason === "duplicate_completion" || row.reason === "completion_lease_held",
+    );
     expect(handled).toHaveLength(1);
-    expect(dupes).toHaveLength(1);
+    expect(blocked).toHaveLength(1);
     expect(store.tasks[0]?.status).toBe("NEXT_TASK");
   });
 
@@ -348,13 +342,13 @@ describe("P0 GitHub verification", () => {
     const adapter = createGitHubAdapterFromEnv({ GITHUB_TOKEN: "" });
     expect(adapter).toBeInstanceOf(UnconfiguredGitHubAdapter);
     await expect(adapter.branchExists("cursor/x")).rejects.toThrow(/GITHUB_TOKEN/);
-    await expect(
-      adapter.verifyTaskPullRequest({
-        taskMarker: "nads-task:11111111-1111-4111-8111-111111111111",
-        expectedOwner: "o",
-        expectedRepo: "r",
-      }),
-    ).rejects.toThrow(/GITHUB_TOKEN/);
+    const verification = await adapter.verifyTaskPullRequest({
+      taskMarker: "nads-task:11111111-1111-4111-8111-111111111111",
+      expectedOwner: "o",
+      expectedRepo: "r",
+    });
+    expect(verification.ok).toBe(false);
+    expect(verification.errors).toContain("missing_github_token");
   });
 
   it("branchExists returns false on 404", async () => {

@@ -4,22 +4,27 @@ import {
   type AutomationDispatchPayload,
 } from "../contracts/automation-payload.js";
 
+export type AutomationDispatchStatus =
+  | "dispatched"
+  | "disabled"
+  | "rejected"
+  | "error"
+  | "ambiguous_timeout"
+  | "ambiguous_server_error"
+  | "auth_error"
+  | "validation_error";
+
 export type AutomationDispatchResult = {
   ok: boolean;
   sent: boolean;
-  status:
-    | "dispatched"
-    | "disabled"
-    | "rejected"
-    | "error"
-    | "ambiguous_timeout"
-    | "auth_error"
-    | "validation_error";
+  status: AutomationDispatchStatus;
   idempotencyKey: string;
   executionId?: string;
   httpStatus?: number;
   attempts?: number;
   error?: string;
+  /** True when another Automation run must not be submitted without explicit reconcile. */
+  uncertain?: boolean;
 };
 
 export type AutomationExecutorOptions = {
@@ -30,7 +35,10 @@ export type AutomationExecutorOptions = {
   fetchImpl?: typeof fetch;
   /** Per-attempt timeout (ms). Default 15_000. */
   timeoutMs?: number;
-  /** Extra retries after the first attempt for transient failures only. Default 2. */
+  /**
+   * Extra retries after the first attempt for *pre-accept* network failures only.
+   * Never used for HTTP 5xx / ambiguous server outcomes. Default 2.
+   */
   maxRetries?: number;
   /** Base backoff ms before jitter. Default 250. */
   backoffMs?: number;
@@ -41,10 +49,6 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isRetryableHttpStatus(status: number): boolean {
-  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
-}
-
 function isAuthHttpStatus(status: number): boolean {
   return status === 401 || status === 403;
 }
@@ -53,13 +57,54 @@ function isValidationHttpStatus(status: number): boolean {
   return status === 400 || status === 404 || status === 422;
 }
 
+/** Ambiguous: request may have been accepted; Cursor has no verified idempotency guarantee. */
+function isAmbiguousServerHttpStatus(status: number): boolean {
+  return status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Only classify failures that almost certainly happened before the server accepted the POST.
+ * DNS / connection refused / reset before headers — safe to retry.
+ * Once an HTTP status exists (including 408/429/5xx), do not retry.
+ */
+export function isPreAcceptNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return false;
+  const message = error.message ?? "";
+  if (/aborted|timeout/i.test(message)) return false;
+  // fetch TypeError / undici / node network codes before response
+  if (error.name === "TypeError" && /fetch failed|network/i.test(message)) return true;
+  const code = (error as NodeJS.ErrnoException).code;
+  if (
+    code === "ECONNREFUSED" ||
+    code === "ENOTFOUND" ||
+    code === "EAI_AGAIN" ||
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "ENETUNREACH"
+  ) {
+    return true;
+  }
+  if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ENETUNREACH|socket hang up/i.test(message)) {
+    return true;
+  }
+  return false;
+}
+
+export function isUncertainDispatchStatus(status: string): boolean {
+  return status === "ambiguous_timeout" || status === "ambiguous_server_error";
+}
+
 /**
  * Outbound Cursor Automation webhook client.
  * Does NOT call Cloud Agents API POST /v1/agents.
  * Network send is disabled unless NADS_AUTOMATION_ENABLED=true.
  *
- * Retries are bounded and skip auth/validation/ambiguous-timeout outcomes
- * so we do not invent duplicate Automation runs.
+ * Critical retry policy:
+ * - Never retry after HTTP 500/502/503/504 or other ambiguous server failures
+ *   (Cursor does not provide a verified idempotency guarantee for Automation POST).
+ * - Retry only pre-accept network errors (connection failed before response).
+ * - Timeouts → ambiguous_timeout, no retry.
  */
 export class AutomationExecutor {
   private readonly webhookUrl: string;
@@ -198,18 +243,30 @@ export class AutomationExecutor {
           };
         }
 
-        lastError = `Automation webhook HTTP ${response.status}`;
-        if (!isRetryableHttpStatus(response.status) || attempt >= maxAttempts) {
+        if (isAmbiguousServerHttpStatus(response.status)) {
+          // Critical: do NOT retry — may have created a run already.
           return {
             ok: false,
             sent: true,
-            status: "error",
+            status: "ambiguous_server_error",
+            uncertain: true,
             idempotencyKey,
             httpStatus: response.status,
             attempts: attempt,
-            error: lastError,
+            error: `Automation webhook HTTP ${response.status} — not retried (ambiguous; requires explicit reconcile)`,
           };
         }
+
+        // Other HTTP statuses (incl. 408/429): response received → do not retry.
+        return {
+          ok: false,
+          sent: true,
+          status: "error",
+          idempotencyKey,
+          httpStatus: response.status,
+          attempts: attempt,
+          error: `Automation webhook HTTP ${response.status}`,
+        };
       } catch (error: unknown) {
         const name = error instanceof Error ? error.name : "";
         const message = error instanceof Error ? error.message : "automation dispatch failed";
@@ -219,20 +276,34 @@ export class AutomationExecutor {
             ok: false,
             sent: true,
             status: "ambiguous_timeout",
+            uncertain: true,
             idempotencyKey,
             attempts: attempt,
             error: `Automation webhook timed out after ${this.timeoutMs}ms — not retried (ambiguous outcome)`,
           };
         }
-        lastError = message.slice(0, 400);
-        if (attempt >= maxAttempts) {
+
+        if (isPreAcceptNetworkError(error) && attempt < maxAttempts) {
+          lastError = message.slice(0, 400);
+        } else if (isPreAcceptNetworkError(error)) {
           return {
             ok: false,
             sent: false,
             status: "error",
             idempotencyKey,
             attempts: attempt,
-            error: lastError,
+            error: message.slice(0, 400),
+          };
+        } else {
+          // Unknown error after possible accept — treat as uncertain, no retry.
+          return {
+            ok: false,
+            sent: true,
+            status: "ambiguous_server_error",
+            uncertain: true,
+            idempotencyKey,
+            attempts: attempt,
+            error: `Ambiguous automation dispatch failure — not retried: ${message.slice(0, 200)}`,
           };
         }
       } finally {

@@ -23,6 +23,15 @@ export type DevelopmentTask = {
   prUrl?: string;
   headBranch?: string;
   dispatchIdempotencyKey?: string;
+  /** Bound at dispatch — used for mandatory GitHub PR verification. */
+  expectedRepoUrl?: string;
+  expectedStartingRef?: string;
+  expectedBranchPrefix?: string;
+  expectedTaskMarker?: string;
+  /** Ambiguous Automation POST outcome; blocks re-dispatch until reconcile. */
+  dispatchOutcome?: string;
+  dispatchUncertain?: boolean;
+  dispatchReconcileToken?: string;
 };
 
 export type DevelopmentEvent = {

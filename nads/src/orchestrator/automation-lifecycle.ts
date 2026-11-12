@@ -1,6 +1,11 @@
+import { randomUUID } from "node:crypto";
 import type { TaskExecutor } from "../adapters/executor.js";
 import type { Reviewer } from "../adapters/openai-reviewer.js";
-import type { GitHubAdapter } from "../adapters/github-adapter.js";
+import {
+  parseGithubRepoUrl,
+  type GitHubAdapter,
+} from "../adapters/github-adapter.js";
+import { isUncertainDispatchStatus } from "../adapters/automation-executor.js";
 import {
   AutomationDispatchPayloadSchema,
   nadsBranchPrefix,
@@ -11,6 +16,7 @@ import type { ExecutionJournal } from "../db/execution-journal.js";
 import { hashPrompt } from "../db/execution-journal.js";
 import type { DevelopmentTask, MemoryStore } from "../db/memory-store.js";
 import {
+  DEFAULT_COMPLETION_LEASE_TTL_MS,
   payloadHashOf,
   type WebhookReceiptStore,
 } from "../db/webhook-receipts.js";
@@ -26,6 +32,7 @@ export type AutomationDispatchOutcome = {
   executionId?: string;
   error?: string;
   attempts?: number;
+  uncertain?: boolean;
 };
 
 export type AutomationCompleteOutcome = {
@@ -85,6 +92,34 @@ function buildDispatchPayload(input: {
 }
 
 /**
+ * Explicitly clear an uncertain dispatch so another Automation POST may proceed.
+ * Does not call Cursor APIs.
+ */
+export function reconcileUncertainDispatch(
+  store: MemoryStore,
+  taskId: string,
+  token: string,
+): { ok: true } | { ok: false; reason: string } {
+  const task = store.tasks.find((row) => row.id === taskId);
+  if (!task) return { ok: false, reason: "task_not_found" };
+  if (!task.dispatchUncertain) return { ok: false, reason: "not_uncertain" };
+  if (!task.dispatchReconcileToken || task.dispatchReconcileToken !== token) {
+    return { ok: false, reason: "invalid_reconcile_token" };
+  }
+  const priorOutcome = task.dispatchOutcome ?? null;
+  task.dispatchUncertain = false;
+  task.dispatchReconcileToken = undefined;
+  task.dispatchOutcome = "reconciled";
+  store.appendEvent({
+    taskId: task.id,
+    eventType: "automation.dispatch.reconciled",
+    payload: { priorOutcome },
+    idempotencyKey: `dispatch.reconcile:${task.id}:${token}`,
+  });
+  return { ok: true };
+}
+
+/**
  * Dispatch a task via the preferred Automation executor.
  * Does not call POST /v1/agents. Does not fall back to cursor API.
  * With NADS_AUTOMATION_ENABLED=false, validates and records a disabled ack.
@@ -116,6 +151,18 @@ export async function dispatchAutomationTask(options: {
   const task = store.tasks.find((row) => row.id === options.taskId);
   if (!task) throw new Error("Task not found");
 
+  if (task.dispatchUncertain) {
+    return {
+      taskId: task.id,
+      sent: false,
+      status: "uncertain_requires_reconcile",
+      idempotencyKey: task.dispatchIdempotencyKey ?? `dispatch:${task.id}:blocked`,
+      error:
+        "Prior Automation POST outcome is uncertain — call reconcileUncertainDispatch before another dispatch",
+      uncertain: true,
+    };
+  }
+
   const attempt = Math.max(1, task.retryCount + 1);
   if (task.status === "READY") {
     store.transition(task.id, "CONTEXT_GATHERING", "automation dispatch");
@@ -136,10 +183,11 @@ export async function dispatchAutomationTask(options: {
     throw new Error(`Cannot dispatch automation from status ${task.status}`);
   }
 
+  const startingRef = options.startingRef ?? "main";
   const payload = buildDispatchPayload({
     task,
     repoUrl: options.repoUrl,
-    startingRef: options.startingRef ?? "main",
+    startingRef,
     attempt,
     priorRejection: options.priorRejection,
     requiredChanges: options.requiredChanges,
@@ -147,6 +195,11 @@ export async function dispatchAutomationTask(options: {
   task.lastPrompt = payload.prompt;
   task.dispatchIdempotencyKey = payload.idempotencyKey;
   task.executorKind = executor.kind === "automation" ? "automation" : "mock";
+  // Bind expected identity for mandatory PR verification on completion.
+  task.expectedRepoUrl = options.repoUrl;
+  task.expectedStartingRef = startingRef;
+  task.expectedBranchPrefix = payload.correlation.branchPrefix;
+  task.expectedTaskMarker = payload.correlation.nadsTaskMarker;
 
   // Idempotent event: same attempt key is a no-op append
   const existing = store.events.find((event) => event.idempotencyKey === payload.idempotencyKey);
@@ -163,6 +216,14 @@ export async function dispatchAutomationTask(options: {
 
   const result = await executor.dispatch({ payload });
 
+  const uncertain =
+    Boolean(result.uncertain) || isUncertainDispatchStatus(result.status);
+  task.dispatchOutcome = result.status;
+  if (uncertain) {
+    task.dispatchUncertain = true;
+    task.dispatchReconcileToken = randomUUID();
+  }
+
   store.appendEvent({
     taskId: task.id,
     eventType: "automation.dispatch",
@@ -174,6 +235,8 @@ export async function dispatchAutomationTask(options: {
       error: result.error ?? null,
       executor: executor.kind,
       attempts: result.attempts ?? null,
+      uncertain,
+      // Never persist reconcile token in event payload (ops-only on task record).
     },
     idempotencyKey: payload.idempotencyKey,
   });
@@ -187,7 +250,7 @@ export async function dispatchAutomationTask(options: {
     providerAgentId: result.executionId,
     providerRunId: result.executionId,
     branchName: undefined,
-    status: result.sent ? "dispatched" : result.status,
+    status: uncertain ? "uncertain" : result.sent ? "dispatched" : result.status,
   });
 
   await options.journal?.upsert({
@@ -211,6 +274,7 @@ export async function dispatchAutomationTask(options: {
     executionId: result.executionId,
     error: result.error,
     attempts: result.attempts,
+    uncertain,
   };
 }
 
@@ -240,34 +304,159 @@ async function claimDelivery(options: {
   return { ok: true };
 }
 
-async function claimExclusiveCompletion(options: {
+async function acquireCompletionLease(options: {
   store: MemoryStore;
   receipts: WebhookReceiptStore;
   taskId: string;
+  provider: "github" | "automation_callback";
+  deliveryId: string;
+  leaseOwner: string;
   payloadHash?: string | null;
-}): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const completionClaim = await options.receipts.tryClaim({
+  leaseTtlMs?: number;
+}): Promise<{ ok: true; leaseOwner: string } | { ok: false; reason: string }> {
+  const result = await options.receipts.tryAcquireCompletionLease({
     projectId: options.store.projectId,
-    provider: "completion_claim",
-    deliveryId: options.taskId,
-    eventType: "automation.complete",
-    payloadHash: options.payloadHash ?? null,
     taskId: options.taskId,
+    provider: options.provider,
+    deliveryId: options.deliveryId,
+    leaseOwner: options.leaseOwner,
+    payloadHash: options.payloadHash ?? null,
+    leaseTtlMs:
+      options.leaseTtlMs ??
+      Number(process.env.NADS_COMPLETION_LEASE_MS ?? DEFAULT_COMPLETION_LEASE_TTL_MS),
   });
-  if (!completionClaim.claimed) {
-    return {
-      ok: false,
-      reason:
-        completionClaim.reason === "duplicate" ? "duplicate_completion" : "receipt_store_unavailable",
-    };
+  if (!result.acquired) {
+    if (result.reason === "completed") {
+      return { ok: false, reason: "duplicate_completion" };
+    }
+    if (result.reason === "held") {
+      return { ok: false, reason: "completion_lease_held" };
+    }
+    return { ok: false, reason: "receipt_store_unavailable" };
   }
-  return { ok: true };
+  return { ok: true, leaseOwner: options.leaseOwner };
+}
+
+function sanitizeVerifyErrors(errors: string[]): string {
+  return errors
+    .map((err) => err.replace(/ghp_[a-zA-Z0-9]+/g, "[REDACTED]").slice(0, 120))
+    .slice(0, 8)
+    .join("; ");
+}
+
+async function verifyBoundPullRequest(options: {
+  store: MemoryStore;
+  github: GitHubAdapter;
+  task: DevelopmentTask;
+  prNumber?: number | null;
+}): Promise<{ ok: true; prNumber: number | null; prUrl: string | null; headBranch: string | null } | { ok: false; reason: string }> {
+  const { task } = options;
+  const repoUrl = task.expectedRepoUrl;
+  const marker = task.expectedTaskMarker ?? nadsTaskMarker(task.id);
+  const branchPrefix = task.expectedBranchPrefix ?? nadsBranchPrefix(task.id);
+
+  if (!repoUrl) {
+    return { ok: false, reason: "missing_dispatch_binding" };
+  }
+  const parsed = parseGithubRepoUrl(repoUrl);
+  if (!parsed) {
+    return { ok: false, reason: "invalid_expected_repo_url" };
+  }
+
+  const verification = await options.github.verifyTaskPullRequest({
+    taskId: task.id,
+    taskMarker: marker,
+    expectedOwner: parsed.owner,
+    expectedRepo: parsed.repo,
+    prNumber: options.prNumber,
+    expectedBranchPrefix: branchPrefix,
+  });
+
+  if (!verification.ok) {
+    const sanitized = sanitizeVerifyErrors(verification.errors);
+    options.store.appendEvent({
+      taskId: task.id,
+      eventType: "github.pr_verification_failed",
+      payload: {
+        reason: sanitized,
+        prNumber: verification.prNumber,
+        repositoryMatch: verification.repositoryMatch,
+        markerPresent: verification.markerPresent,
+        branchExists: verification.branchExists,
+        notMerged: verification.notMerged,
+      },
+      idempotencyKey: `github.verify.fail:${task.id}:${options.prNumber ?? "none"}:${sanitized.slice(0, 40)}`,
+    });
+    const primary = verification.errors[0] ?? "pr_verification_failed";
+    if (primary === "missing_github_token") {
+      return { ok: false, reason: "missing_github_token" };
+    }
+    return { ok: false, reason: `pr_verification_failed:${primary}` };
+  }
+
+  return {
+    ok: true,
+    prNumber: verification.prNumber,
+    prUrl: verification.prUrl,
+    headBranch: verification.headBranch,
+  };
+}
+
+async function runReviewAndTransition(options: {
+  store: MemoryStore;
+  reviewer: Reviewer;
+  task: DevelopmentTask;
+  journal?: ExecutionJournal;
+  agentResult: string;
+  testSummary: { commands: string[]; exitCodes: number[]; notes: string };
+  idempotencyKey: string;
+  source: string;
+}): Promise<{ decision: string }> {
+  const { store, task } = options;
+  if (task.status === "AGENT_RUNNING") {
+    store.transition(task.id, "TESTING", `${options.source} evidence gathered`);
+  }
+  if (task.status === "TESTING") {
+    store.transition(task.id, "REVIEWING", "independent review");
+  }
+
+  const review = await options.reviewer.review({
+    taskTitle: task.title,
+    acceptanceCriteria: task.acceptanceCriteria,
+    prompt: task.lastPrompt ?? task.description,
+    agentResult: options.agentResult,
+    testSummary: options.testSummary,
+  });
+
+  store.appendEvent({
+    taskId: task.id,
+    eventType: "review.completed",
+    payload: { decision: review.decision, summary: review.summary, source: options.source },
+    idempotencyKey: options.idempotencyKey,
+  });
+
+  if (review.decision === "ACCEPT") {
+    store.transition(task.id, "ACCEPTED", review.summary);
+    store.transition(task.id, "NEXT_TASK", "ready for selector");
+    await options.journal?.clear(task.id);
+  } else if (review.decision === "BLOCKED") {
+    store.transition(task.id, "BLOCKED", review.summary);
+  } else {
+    task.retryCount += 1;
+    if (task.retryCount > Math.min(task.maxRetries, 3)) {
+      store.transition(task.id, "BLOCKED", "max retries exceeded");
+    } else {
+      store.transition(task.id, "REVISION_REQUIRED", review.summary);
+    }
+  }
+
+  return { decision: review.decision };
 }
 
 /**
  * Complete an automation-backed task from a verified GitHub webhook.
- * Runs independent OpenAI/heuristic review when PR evidence is available.
- * Distinct deliveries for the same task cannot double-complete.
+ * Mandatory PR verification uses the bound dispatch record.
+ * Completion uses recoverable leases — failures release the claim.
  */
 export async function completeAutomationTaskFromGitHub(options: {
   store: MemoryStore;
@@ -277,6 +466,8 @@ export async function completeAutomationTaskFromGitHub(options: {
   journal?: ExecutionJournal;
   receipts?: WebhookReceiptStore;
   rawBody?: string | Buffer;
+  leaseOwner?: string;
+  leaseTtlMs?: number;
 }): Promise<AutomationCompleteOutcome> {
   const { store, verified } = options;
   const receipts = options.receipts ?? store.receipts;
@@ -313,7 +504,6 @@ export async function completeAutomationTaskFromGitHub(options: {
     };
   }
 
-  // Mirror into in-memory event log for observability (receipt store is authoritative).
   store.appendEvent({
     taskId: task.id,
     eventType: "github.webhook",
@@ -338,125 +528,214 @@ export async function completeAutomationTaskFromGitHub(options: {
     };
   }
 
-  const completion = await claimExclusiveCompletion({
+  const leaseOwner = options.leaseOwner ?? `worker:${randomUUID()}`;
+  const lease = await acquireCompletionLease({
     store,
     receipts,
     taskId: task.id,
+    provider: "github",
+    deliveryId: verified.deliveryId,
+    leaseOwner,
     payloadHash,
+    leaseTtlMs: options.leaseTtlMs,
   });
-  if (!completion.ok) {
+  if (!lease.ok) {
     return {
       taskId: task.id,
       handled: false,
-      reason: completion.reason,
+      reason: lease.reason,
       prNumber: verified.prNumber,
       prUrl: verified.prUrl,
     };
   }
 
-  let filesSummary = "";
-  let checks: Array<{ name: string; conclusion: string | null }> = [];
-  if (verified.prNumber && options.github.getPullRequest && options.github.listPullRequestFiles) {
-    const pr = await options.github.getPullRequest(verified.prNumber);
-    if (pr.merged) {
-      store.transition(task.id, "BLOCKED", "PR already merged — refusing ACCEPT");
+  const release = async (reason: string) => {
+    await receipts.releaseCompletionLease({
+      projectId: store.projectId,
+      taskId: task.id,
+      leaseOwner,
+      reason,
+      status: "failed",
+    });
+  };
+
+  try {
+    const verifiedPr = await verifyBoundPullRequest({
+      store,
+      github: options.github,
+      task,
+      prNumber: verified.prNumber,
+    });
+    if (!verifiedPr.ok) {
+      await release(verifiedPr.reason);
       return {
         taskId: task.id,
-        handled: true,
-        reason: "pr_merged_blocked",
-        decision: "BLOCKED",
+        handled: false,
+        reason: verifiedPr.reason,
         prNumber: verified.prNumber,
         prUrl: verified.prUrl,
       };
     }
-    const files = await options.github.listPullRequestFiles(verified.prNumber);
-    checks = await options.github.getCheckConclusions(pr.headSha);
-    filesSummary = files
-      .slice(0, 40)
-      .map((file) => `${file.status} ${file.filename} (+${file.additions}/-${file.deletions})`)
-      .join("\n");
-    task.prNumber = pr.number;
-    task.prUrl = pr.url;
-    task.headBranch = pr.headRef;
-    await options.journal?.upsert({
-      taskId: task.id,
-      agentId: task.assignedAgentId ?? task.externalExecutionId,
-      runId: String(verified.prNumber),
-      iteration: task.retryCount + 1,
-      status: "github_evidence",
-      promptHash: hashPrompt(task.lastPrompt ?? ""),
-      branchName: pr.headRef,
-      prUrl: pr.url,
-      prNumber: pr.number,
-      executorKind: task.executorKind,
-      updatedAt: new Date().toISOString(),
-    });
-  }
 
-  if (task.status === "AGENT_RUNNING") {
-    store.transition(task.id, "TESTING", "github evidence gathered");
-  }
-  if (task.status === "TESTING") {
-    store.transition(task.id, "REVIEWING", "independent review");
-  }
+    let filesSummary = "";
+    let checks: Array<{ name: string; conclusion: string | null }> = [];
+    const prNumber = verifiedPr.prNumber ?? verified.prNumber;
 
-  const failedChecks = checks.filter((check) => check.conclusion && check.conclusion !== "success");
-  const review = await options.reviewer.review({
-    taskTitle: task.title,
-    acceptanceCriteria: task.acceptanceCriteria,
-    prompt: task.lastPrompt ?? task.description,
-    agentResult: [
-      `PR ${verified.prNumber ?? "unknown"} ${verified.prUrl ?? ""}`,
-      `Branch ${verified.headBranch ?? "unknown"}`,
-      "Files:",
-      filesSummary || "(no files fetched)",
-      "Checks:",
-      checks.map((check) => `${check.name}:${check.conclusion ?? "pending"}`).join(", ") || "none",
-    ].join("\n"),
-    testSummary: {
-      commands: checks.map((check) => check.name),
-      exitCodes: checks.map((check) => (check.conclusion === "success" ? 0 : 1)),
-      notes: failedChecks.length
-        ? `Failed checks: ${failedChecks.map((check) => check.name).join(", ")}`
-        : "GitHub evidence path",
-    },
-  });
-
-  store.appendEvent({
-    taskId: task.id,
-    eventType: "review.completed",
-    payload: { decision: review.decision, summary: review.summary, source: "github_completion" },
-    idempotencyKey: `review:github:${task.id}:${verified.deliveryId}`,
-  });
-
-  if (review.decision === "ACCEPT") {
-    store.transition(task.id, "ACCEPTED", review.summary);
-    store.transition(task.id, "NEXT_TASK", "ready for selector");
-    await options.journal?.clear(task.id);
-  } else if (review.decision === "BLOCKED") {
-    store.transition(task.id, "BLOCKED", review.summary);
-  } else {
-    task.retryCount += 1;
-    if (task.retryCount > Math.min(task.maxRetries, 3)) {
-      store.transition(task.id, "BLOCKED", "max retries exceeded");
-    } else {
-      store.transition(task.id, "REVISION_REQUIRED", review.summary);
+    if (prNumber && options.github.getPullRequest && options.github.listPullRequestFiles) {
+      let pr;
+      try {
+        pr = await options.github.getPullRequest(prNumber);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message.slice(0, 200) : "pr_retrieval_failed";
+        await release(`pr_retrieval_failed:${message}`);
+        return {
+          taskId: task.id,
+          handled: false,
+          reason: "pr_retrieval_failed",
+          prNumber,
+          prUrl: verified.prUrl,
+        };
+      }
+      if (pr.merged) {
+        store.transition(task.id, "BLOCKED", "PR already merged — refusing ACCEPT");
+        await receipts.finalizeCompletionLease({
+          projectId: store.projectId,
+          taskId: task.id,
+          leaseOwner,
+        });
+        return {
+          taskId: task.id,
+          handled: true,
+          reason: "pr_merged_blocked",
+          decision: "BLOCKED",
+          prNumber,
+          prUrl: pr.url,
+        };
+      }
+      try {
+        const files = await options.github.listPullRequestFiles(prNumber);
+        checks = await options.github.getCheckConclusions(pr.headSha);
+        filesSummary = files
+          .slice(0, 40)
+          .map((file) => `${file.status} ${file.filename} (+${file.additions}/-${file.deletions})`)
+          .join("\n");
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message.slice(0, 200) : "evidence_failed";
+        await release(`evidence_failed:${message}`);
+        return {
+          taskId: task.id,
+          handled: false,
+          reason: "evidence_retrieval_failed",
+          prNumber,
+          prUrl: pr.url,
+        };
+      }
+      task.prNumber = pr.number;
+      task.prUrl = pr.url;
+      task.headBranch = pr.headRef;
+      await options.journal?.upsert({
+        taskId: task.id,
+        agentId: task.assignedAgentId ?? task.externalExecutionId,
+        runId: String(prNumber),
+        iteration: task.retryCount + 1,
+        status: "github_evidence",
+        promptHash: hashPrompt(task.lastPrompt ?? ""),
+        branchName: pr.headRef,
+        prUrl: pr.url,
+        prNumber: pr.number,
+        executorKind: task.executorKind,
+        updatedAt: new Date().toISOString(),
+      });
     }
-  }
 
-  return {
-    taskId: task.id,
-    handled: true,
-    reason: "reviewed",
-    decision: review.decision,
-    prNumber: verified.prNumber,
-    prUrl: verified.prUrl,
-  };
+    let decision: string;
+    try {
+      const failedChecks = checks.filter(
+        (check) => check.conclusion && check.conclusion !== "success",
+      );
+      const reviewed = await runReviewAndTransition({
+        store,
+        reviewer: options.reviewer,
+        task,
+        journal: options.journal,
+        agentResult: [
+          `PR ${prNumber ?? "unknown"} ${verifiedPr.prUrl ?? verified.prUrl ?? ""}`,
+          `Branch ${verifiedPr.headBranch ?? verified.headBranch ?? "unknown"}`,
+          "Files:",
+          filesSummary || "(no files fetched)",
+          "Checks:",
+          checks.map((check) => `${check.name}:${check.conclusion ?? "pending"}`).join(", ") ||
+            "none",
+        ].join("\n"),
+        testSummary: {
+          commands: checks.map((check) => check.name),
+          exitCodes: checks.map((check) => (check.conclusion === "success" ? 0 : 1)),
+          notes: failedChecks.length
+            ? `Failed checks: ${failedChecks.map((check) => check.name).join(", ")}`
+            : "GitHub evidence path",
+        },
+        idempotencyKey: `review:github:${task.id}:${verified.deliveryId}`,
+        source: "github_completion",
+      });
+      decision = reviewed.decision;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message.slice(0, 200) : "review_failed";
+      await release(`review_failed:${message}`);
+      // Never silently mark completed after a failed review.
+      if (task.status === "REVIEWING" || task.status === "TESTING") {
+        // Leave non-terminal; do not invent ACCEPT.
+      }
+      return {
+        taskId: task.id,
+        handled: false,
+        reason: "review_failed",
+        prNumber: task.prNumber ?? prNumber,
+        prUrl: task.prUrl ?? verified.prUrl,
+      };
+    }
+
+    if (decision === "ACCEPT" || decision === "BLOCKED") {
+      await receipts.finalizeCompletionLease({
+        projectId: store.projectId,
+        taskId: task.id,
+        leaseOwner,
+      });
+    } else {
+      // REJECT → revision: release lease so a later PR can complete.
+      await receipts.releaseCompletionLease({
+        projectId: store.projectId,
+        taskId: task.id,
+        leaseOwner,
+        reason: "revision_required",
+        status: "released",
+      });
+    }
+
+    return {
+      taskId: task.id,
+      handled: true,
+      reason: "reviewed",
+      decision,
+      prNumber: task.prNumber ?? prNumber,
+      prUrl: task.prUrl ?? verified.prUrl,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
+    await release(`completion_failed:${message}`);
+    return {
+      taskId: task.id,
+      handled: false,
+      reason: "completion_failed",
+      prNumber: verified.prNumber,
+      prUrl: verified.prUrl,
+    };
+  }
 }
 
 /**
  * Optional Automation callback completion (NADS-signed bridge only).
- * Does not call Cursor APIs. Still requires exclusive completion claim.
+ * Does not call Cursor APIs. Still requires exclusive recoverable completion lease
+ * and mandatory PR verification bound to the dispatch record.
  */
 export async function completeAutomationTaskFromCallback(options: {
   store: MemoryStore;
@@ -466,6 +745,8 @@ export async function completeAutomationTaskFromCallback(options: {
   journal?: ExecutionJournal;
   receipts?: WebhookReceiptStore;
   rawBody?: string | Buffer;
+  leaseOwner?: string;
+  leaseTtlMs?: number;
 }): Promise<AutomationCompleteOutcome> {
   const { store, callback } = options;
   const receipts = options.receipts ?? store.receipts;
@@ -501,59 +782,106 @@ export async function completeAutomationTaskFromCallback(options: {
   if (task.status !== "AGENT_RUNNING" && task.status !== "TESTING" && task.status !== "REVIEWING") {
     return { taskId: task.id, handled: false, reason: `unexpected_status_${task.status}` };
   }
-  const completion = await claimExclusiveCompletion({
+
+  const leaseOwner = options.leaseOwner ?? `worker:${randomUUID()}`;
+  const lease = await acquireCompletionLease({
     store,
     receipts,
     taskId: task.id,
+    provider: "automation_callback",
+    deliveryId,
+    leaseOwner,
     payloadHash,
+    leaseTtlMs: options.leaseTtlMs,
   });
-  if (!completion.ok) {
-    return { taskId: task.id, handled: false, reason: completion.reason };
+  if (!lease.ok) {
+    return { taskId: task.id, handled: false, reason: lease.reason };
   }
 
-  if (!(callback.prNumber && options.github.getPullRequest)) {
-    return { taskId: task.id, handled: false, reason: "callback_missing_pr" };
-  }
-
-  const pr = await options.github.getPullRequest(callback.prNumber);
-  task.prNumber = pr.number;
-  task.prUrl = pr.url;
-  task.headBranch = pr.headRef;
-  if (task.status === "AGENT_RUNNING") store.transition(task.id, "TESTING", "callback evidence");
-  if (task.status === "TESTING") store.transition(task.id, "REVIEWING", "independent review");
-  const review = await options.reviewer.review({
-    taskTitle: task.title,
-    acceptanceCriteria: task.acceptanceCriteria,
-    prompt: task.lastPrompt ?? task.description,
-    agentResult: `Callback succeeded. PR ${pr.number} ${pr.url} branch ${pr.headRef}`,
-    testSummary: { commands: [], exitCodes: [], notes: "automation callback path" },
-  });
-  store.appendEvent({
-    taskId: task.id,
-    eventType: "review.completed",
-    payload: { decision: review.decision, summary: review.summary, source: "automation_callback" },
-    idempotencyKey: `review:callback:${task.id}:${deliveryId}`,
-  });
-  if (review.decision === "ACCEPT") {
-    store.transition(task.id, "ACCEPTED", review.summary);
-    store.transition(task.id, "NEXT_TASK", "ready for selector");
-    await options.journal?.clear(task.id);
-  } else if (review.decision === "BLOCKED") {
-    store.transition(task.id, "BLOCKED", review.summary);
-  } else {
-    task.retryCount += 1;
-    store.transition(
-      task.id,
-      task.retryCount > Math.min(task.maxRetries, 3) ? "BLOCKED" : "REVISION_REQUIRED",
-      review.summary,
-    );
-  }
-  return {
-    taskId: task.id,
-    handled: true,
-    reason: "reviewed",
-    decision: review.decision,
-    prNumber: pr.number,
-    prUrl: pr.url,
+  const release = async (reason: string) => {
+    await receipts.releaseCompletionLease({
+      projectId: store.projectId,
+      taskId: task.id,
+      leaseOwner,
+      reason,
+      status: "failed",
+    });
   };
+
+  try {
+    if (!(callback.prNumber && options.github.getPullRequest)) {
+      await release("callback_missing_pr");
+      return { taskId: task.id, handled: false, reason: "callback_missing_pr" };
+    }
+
+    const verifiedPr = await verifyBoundPullRequest({
+      store,
+      github: options.github,
+      task,
+      prNumber: callback.prNumber,
+    });
+    if (!verifiedPr.ok) {
+      await release(verifiedPr.reason);
+      return { taskId: task.id, handled: false, reason: verifiedPr.reason };
+    }
+
+    let pr;
+    try {
+      pr = await options.github.getPullRequest(callback.prNumber);
+    } catch {
+      await release("pr_retrieval_failed");
+      return { taskId: task.id, handled: false, reason: "pr_retrieval_failed" };
+    }
+
+    task.prNumber = pr.number;
+    task.prUrl = pr.url;
+    task.headBranch = pr.headRef;
+
+    let decision: string;
+    try {
+      const reviewed = await runReviewAndTransition({
+        store,
+        reviewer: options.reviewer,
+        task,
+        journal: options.journal,
+        agentResult: `Callback succeeded. PR ${pr.number} ${pr.url} branch ${pr.headRef}`,
+        testSummary: { commands: [], exitCodes: [], notes: "automation callback path" },
+        idempotencyKey: `review:callback:${task.id}:${deliveryId}`,
+        source: "automation_callback",
+      });
+      decision = reviewed.decision;
+    } catch {
+      await release("review_failed");
+      return { taskId: task.id, handled: false, reason: "review_failed" };
+    }
+
+    if (decision === "ACCEPT" || decision === "BLOCKED") {
+      await receipts.finalizeCompletionLease({
+        projectId: store.projectId,
+        taskId: task.id,
+        leaseOwner,
+      });
+    } else {
+      await receipts.releaseCompletionLease({
+        projectId: store.projectId,
+        taskId: task.id,
+        leaseOwner,
+        reason: "revision_required",
+        status: "released",
+      });
+    }
+
+    return {
+      taskId: task.id,
+      handled: true,
+      reason: "reviewed",
+      decision,
+      prNumber: pr.number,
+      prUrl: pr.url,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
+    await release(`completion_failed:${message}`);
+    return { taskId: task.id, handled: false, reason: "completion_failed" };
+  }
 }
