@@ -8,10 +8,15 @@ import {
   type AutomationDispatchPayload,
 } from "../contracts/automation-payload.js";
 import type { ExecutionJournal } from "../db/execution-journal.js";
+import { hashPrompt } from "../db/execution-journal.js";
 import type { DevelopmentTask, MemoryStore } from "../db/memory-store.js";
+import {
+  payloadHashOf,
+  type WebhookReceiptStore,
+} from "../db/webhook-receipts.js";
 import type { VerifiedGitHubWebhook } from "../ingress/github-webhook.js";
 import { isAutomationCompletionEvent } from "../ingress/github-webhook.js";
-import { hashPrompt } from "../db/execution-journal.js";
+import type { AutomationCallbackPayload } from "../contracts/automation-payload.js";
 
 export type AutomationDispatchOutcome = {
   taskId: string;
@@ -20,6 +25,7 @@ export type AutomationDispatchOutcome = {
   idempotencyKey: string;
   executionId?: string;
   error?: string;
+  attempts?: number;
 };
 
 export type AutomationCompleteOutcome = {
@@ -92,6 +98,7 @@ export async function dispatchAutomationTask(options: {
   journal?: ExecutionJournal;
   priorRejection?: string | null;
   requiredChanges?: string[];
+  receipts?: WebhookReceiptStore;
 }): Promise<AutomationDispatchOutcome> {
   const { store, executor } = options;
   if (store.settings.emergencyStop) {
@@ -138,6 +145,8 @@ export async function dispatchAutomationTask(options: {
     requiredChanges: options.requiredChanges,
   });
   task.lastPrompt = payload.prompt;
+  task.dispatchIdempotencyKey = payload.idempotencyKey;
+  task.executorKind = executor.kind === "automation" ? "automation" : "mock";
 
   // Idempotent event: same attempt key is a no-op append
   const existing = store.events.find((event) => event.idempotencyKey === payload.idempotencyKey);
@@ -147,7 +156,8 @@ export async function dispatchAutomationTask(options: {
       sent: false,
       status: "idempotent_replay",
       idempotencyKey: payload.idempotencyKey,
-      executionId: typeof existing.payload.executionId === "string" ? existing.payload.executionId : undefined,
+      executionId:
+        typeof existing.payload.executionId === "string" ? existing.payload.executionId : undefined,
     };
   }
 
@@ -163,9 +173,14 @@ export async function dispatchAutomationTask(options: {
       httpStatus: result.httpStatus ?? null,
       error: result.error ?? null,
       executor: executor.kind,
+      attempts: result.attempts ?? null,
     },
     idempotencyKey: payload.idempotencyKey,
   });
+
+  if (result.executionId) {
+    task.externalExecutionId = result.executionId;
+  }
 
   store.recordAgentSession({
     taskId: task.id,
@@ -184,6 +199,7 @@ export async function dispatchAutomationTask(options: {
     promptHash: hashPrompt(payload.prompt),
     branchName: undefined,
     prUrl: undefined,
+    executorKind: task.executorKind,
     updatedAt: new Date().toISOString(),
   });
 
@@ -194,12 +210,64 @@ export async function dispatchAutomationTask(options: {
     idempotencyKey: payload.idempotencyKey,
     executionId: result.executionId,
     error: result.error,
+    attempts: result.attempts,
   };
+}
+
+async function claimDelivery(options: {
+  store: MemoryStore;
+  receipts: WebhookReceiptStore;
+  taskId: string;
+  provider: "github" | "automation_callback";
+  deliveryId: string;
+  eventType: string;
+  payloadHash?: string | null;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const deliveryClaim = await options.receipts.tryClaim({
+    projectId: options.store.projectId,
+    provider: options.provider,
+    deliveryId: options.deliveryId,
+    eventType: options.eventType,
+    payloadHash: options.payloadHash ?? null,
+    taskId: options.taskId,
+  });
+  if (!deliveryClaim.claimed) {
+    return {
+      ok: false,
+      reason: deliveryClaim.reason === "duplicate" ? "duplicate_delivery" : "receipt_store_unavailable",
+    };
+  }
+  return { ok: true };
+}
+
+async function claimExclusiveCompletion(options: {
+  store: MemoryStore;
+  receipts: WebhookReceiptStore;
+  taskId: string;
+  payloadHash?: string | null;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const completionClaim = await options.receipts.tryClaim({
+    projectId: options.store.projectId,
+    provider: "completion_claim",
+    deliveryId: options.taskId,
+    eventType: "automation.complete",
+    payloadHash: options.payloadHash ?? null,
+    taskId: options.taskId,
+  });
+  if (!completionClaim.claimed) {
+    return {
+      ok: false,
+      reason:
+        completionClaim.reason === "duplicate" ? "duplicate_completion" : "receipt_store_unavailable",
+    };
+  }
+  return { ok: true };
 }
 
 /**
  * Complete an automation-backed task from a verified GitHub webhook.
  * Runs independent OpenAI/heuristic review when PR evidence is available.
+ * Distinct deliveries for the same task cannot double-complete.
  */
 export async function completeAutomationTaskFromGitHub(options: {
   store: MemoryStore;
@@ -207,8 +275,12 @@ export async function completeAutomationTaskFromGitHub(options: {
   github: GitHubAdapter;
   verified: VerifiedGitHubWebhook;
   journal?: ExecutionJournal;
+  receipts?: WebhookReceiptStore;
+  rawBody?: string | Buffer;
 }): Promise<AutomationCompleteOutcome> {
   const { store, verified } = options;
+  const receipts = options.receipts ?? store.receipts;
+
   if (!isAutomationCompletionEvent(verified)) {
     return { taskId: verified.taskId ?? "unknown", handled: false, reason: "event_not_applicable" };
   }
@@ -221,11 +293,27 @@ export async function completeAutomationTaskFromGitHub(options: {
     return { taskId: verified.taskId, handled: false, reason: "task_not_found" };
   }
 
-  const deliveryKey = `github.delivery:${verified.deliveryId}`;
-  if (store.events.some((event) => event.idempotencyKey === deliveryKey)) {
-    return { taskId: task.id, handled: false, reason: "duplicate_delivery" };
+  const payloadHash = payloadHashOf(options.rawBody);
+  const delivery = await claimDelivery({
+    store,
+    receipts,
+    taskId: task.id,
+    provider: "github",
+    deliveryId: verified.deliveryId,
+    eventType: `${verified.event}:${verified.action ?? "none"}`,
+    payloadHash,
+  });
+  if (!delivery.ok) {
+    return {
+      taskId: task.id,
+      handled: false,
+      reason: delivery.reason,
+      prNumber: verified.prNumber,
+      prUrl: verified.prUrl,
+    };
   }
 
+  // Mirror into in-memory event log for observability (receipt store is authoritative).
   store.appendEvent({
     taskId: task.id,
     eventType: "github.webhook",
@@ -237,7 +325,7 @@ export async function completeAutomationTaskFromGitHub(options: {
       prUrl: verified.prUrl,
       headBranch: verified.headBranch,
     },
-    idempotencyKey: deliveryKey,
+    idempotencyKey: `github.delivery:${verified.deliveryId}`,
   });
 
   if (task.status !== "AGENT_RUNNING" && task.status !== "TESTING" && task.status !== "REVIEWING") {
@@ -250,25 +338,57 @@ export async function completeAutomationTaskFromGitHub(options: {
     };
   }
 
+  const completion = await claimExclusiveCompletion({
+    store,
+    receipts,
+    taskId: task.id,
+    payloadHash,
+  });
+  if (!completion.ok) {
+    return {
+      taskId: task.id,
+      handled: false,
+      reason: completion.reason,
+      prNumber: verified.prNumber,
+      prUrl: verified.prUrl,
+    };
+  }
+
   let filesSummary = "";
   let checks: Array<{ name: string; conclusion: string | null }> = [];
   if (verified.prNumber && options.github.getPullRequest && options.github.listPullRequestFiles) {
     const pr = await options.github.getPullRequest(verified.prNumber);
+    if (pr.merged) {
+      store.transition(task.id, "BLOCKED", "PR already merged — refusing ACCEPT");
+      return {
+        taskId: task.id,
+        handled: true,
+        reason: "pr_merged_blocked",
+        decision: "BLOCKED",
+        prNumber: verified.prNumber,
+        prUrl: verified.prUrl,
+      };
+    }
     const files = await options.github.listPullRequestFiles(verified.prNumber);
     checks = await options.github.getCheckConclusions(pr.headSha);
     filesSummary = files
       .slice(0, 40)
       .map((file) => `${file.status} ${file.filename} (+${file.additions}/-${file.deletions})`)
       .join("\n");
+    task.prNumber = pr.number;
+    task.prUrl = pr.url;
+    task.headBranch = pr.headRef;
     await options.journal?.upsert({
       taskId: task.id,
-      agentId: task.assignedAgentId,
+      agentId: task.assignedAgentId ?? task.externalExecutionId,
       runId: String(verified.prNumber),
       iteration: task.retryCount + 1,
       status: "github_evidence",
       promptHash: hashPrompt(task.lastPrompt ?? ""),
       branchName: pr.headRef,
       prUrl: pr.url,
+      prNumber: pr.number,
+      executorKind: task.executorKind,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -331,5 +451,109 @@ export async function completeAutomationTaskFromGitHub(options: {
     decision: review.decision,
     prNumber: verified.prNumber,
     prUrl: verified.prUrl,
+  };
+}
+
+/**
+ * Optional Automation callback completion (NADS-signed bridge only).
+ * Does not call Cursor APIs. Still requires exclusive completion claim.
+ */
+export async function completeAutomationTaskFromCallback(options: {
+  store: MemoryStore;
+  reviewer: Reviewer;
+  github: GitHubAdapter;
+  callback: AutomationCallbackPayload;
+  journal?: ExecutionJournal;
+  receipts?: WebhookReceiptStore;
+  rawBody?: string | Buffer;
+}): Promise<AutomationCompleteOutcome> {
+  const { store, callback } = options;
+  const receipts = options.receipts ?? store.receipts;
+  const task = store.tasks.find((row) => row.id === callback.taskId);
+  if (!task) {
+    return { taskId: callback.taskId, handled: false, reason: "task_not_found" };
+  }
+
+  if (callback.status !== "succeeded") {
+    return {
+      taskId: task.id,
+      handled: false,
+      reason: `callback_status_${callback.status}`,
+      prNumber: callback.prNumber ?? null,
+      prUrl: callback.prUrl ?? null,
+    };
+  }
+
+  const deliveryId = `${callback.executionId}:${callback.status}:${callback.occurredAt}`;
+  const payloadHash = payloadHashOf(options.rawBody);
+  const delivery = await claimDelivery({
+    store,
+    receipts,
+    taskId: task.id,
+    provider: "automation_callback",
+    deliveryId,
+    eventType: `callback:${callback.status}`,
+    payloadHash,
+  });
+  if (!delivery.ok) {
+    return { taskId: task.id, handled: false, reason: delivery.reason };
+  }
+  if (task.status !== "AGENT_RUNNING" && task.status !== "TESTING" && task.status !== "REVIEWING") {
+    return { taskId: task.id, handled: false, reason: `unexpected_status_${task.status}` };
+  }
+  const completion = await claimExclusiveCompletion({
+    store,
+    receipts,
+    taskId: task.id,
+    payloadHash,
+  });
+  if (!completion.ok) {
+    return { taskId: task.id, handled: false, reason: completion.reason };
+  }
+
+  if (!(callback.prNumber && options.github.getPullRequest)) {
+    return { taskId: task.id, handled: false, reason: "callback_missing_pr" };
+  }
+
+  const pr = await options.github.getPullRequest(callback.prNumber);
+  task.prNumber = pr.number;
+  task.prUrl = pr.url;
+  task.headBranch = pr.headRef;
+  if (task.status === "AGENT_RUNNING") store.transition(task.id, "TESTING", "callback evidence");
+  if (task.status === "TESTING") store.transition(task.id, "REVIEWING", "independent review");
+  const review = await options.reviewer.review({
+    taskTitle: task.title,
+    acceptanceCriteria: task.acceptanceCriteria,
+    prompt: task.lastPrompt ?? task.description,
+    agentResult: `Callback succeeded. PR ${pr.number} ${pr.url} branch ${pr.headRef}`,
+    testSummary: { commands: [], exitCodes: [], notes: "automation callback path" },
+  });
+  store.appendEvent({
+    taskId: task.id,
+    eventType: "review.completed",
+    payload: { decision: review.decision, summary: review.summary, source: "automation_callback" },
+    idempotencyKey: `review:callback:${task.id}:${deliveryId}`,
+  });
+  if (review.decision === "ACCEPT") {
+    store.transition(task.id, "ACCEPTED", review.summary);
+    store.transition(task.id, "NEXT_TASK", "ready for selector");
+    await options.journal?.clear(task.id);
+  } else if (review.decision === "BLOCKED") {
+    store.transition(task.id, "BLOCKED", review.summary);
+  } else {
+    task.retryCount += 1;
+    store.transition(
+      task.id,
+      task.retryCount > Math.min(task.maxRetries, 3) ? "BLOCKED" : "REVISION_REQUIRED",
+      review.summary,
+    );
+  }
+  return {
+    taskId: task.id,
+    handled: true,
+    reason: "reviewed",
+    decision: review.decision,
+    prNumber: pr.number,
+    prUrl: pr.url,
   };
 }

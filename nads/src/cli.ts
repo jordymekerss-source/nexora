@@ -15,6 +15,8 @@ import { ExecutionJournal } from "./db/execution-journal.js";
 import { runTaskLoop } from "./orchestrator/loop.js";
 import { dispatchAutomationTask } from "./orchestrator/automation-lifecycle.js";
 import { AutomationExecutor } from "./adapters/automation-executor.js";
+import { createWebhookReceiptStoreFromEnv } from "./db/webhook-receipts.js";
+import { createNadsIngressServer, listenNadsIngress } from "./ingress/http-server.js";
 
 function redactSecrets(value: unknown): unknown {
   if (typeof value === "string") {
@@ -497,6 +499,65 @@ async function cursorSmoke(): Promise<void> {
   }
 }
 
+/**
+ * Receive-only ingress. Does not enable Automation send.
+ * Refuses unless NADS_INGRESS_ENABLED=true.
+ */
+async function ingressServe(): Promise<void> {
+  if ((process.env.NADS_INGRESS_ENABLED ?? "false").toLowerCase() !== "true") {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        status: "BLOCKED",
+        reason:
+          "ingress-serve is disabled by default. Set NADS_INGRESS_ENABLED=true only when intentionally hosting receive endpoints. Does not send Automation webhooks or call /v1/agents.",
+      }),
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  const githubSecret = process.env.GITHUB_WEBHOOK_SECRET?.trim() ?? "";
+  if (!githubSecret) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: "GITHUB_WEBHOOK_SECRET required when NADS_INGRESS_ENABLED=true",
+      }),
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const store = new MemoryStore();
+  const github = createGitHubAdapterFromEnv();
+  const reviewer = createReviewerFromEnv();
+  const receipts = createWebhookReceiptStoreFromEnv();
+  const server = createNadsIngressServer({
+    store,
+    github,
+    reviewer,
+    receipts,
+    githubWebhookSecret: githubSecret,
+    automationCallbackSecret: process.env.NADS_AUTOMATION_CALLBACK_SECRET,
+    maxBodyBytes: Number(process.env.NADS_INGRESS_MAX_BODY_BYTES ?? 1_048_576),
+    readyCheck: () => true,
+  });
+
+  const host = process.env.NADS_INGRESS_HOST ?? "127.0.0.1";
+  const port = Number(process.env.NADS_INGRESS_PORT ?? 8787);
+  const bound = await listenNadsIngress(server, { host, port });
+  console.log(
+    JSON.stringify({
+      ok: true,
+      listening: `http://${bound.host}:${bound.port}`,
+      routes: ["/health", "/ready", "/webhooks/github", "/webhooks/automation-callback"],
+      automationSendEnabled: false,
+      note: "Receive-only ingress. NADS_AUTOMATION_ENABLED remains independent and defaults false.",
+    }),
+  );
+}
+
 const command = process.argv[2] ?? "dry-run";
 
 const runners: Record<string, () => Promise<void>> = {
@@ -507,13 +568,14 @@ const runners: Record<string, () => Promise<void>> = {
   "provider-mode": showProviderMode,
   "executor-status": showExecutorStatus,
   "automation-dispatch-dry": automationDispatchDry,
+  "ingress-serve": ingressServe,
   "cursor-smoke": cursorSmoke,
 };
 
 const run = runners[command];
 if (!run) {
   console.error(
-    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | cursor-smoke`,
+    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | ingress-serve | cursor-smoke`,
   );
   process.exit(1);
 }

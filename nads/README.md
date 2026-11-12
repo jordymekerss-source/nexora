@@ -11,14 +11,17 @@ Do not import `/nads` from `/src` application code. Do not add the OpenAI SDK to
 - Optional fallback: **`NADS_EXECUTOR=cursor`** → `HttpCursorAgentProvider` (explicit only; never auto-fallback)
 - Official OpenAI SDK structured reviewer (`openai@7`) under `/nads` only
 - GitHub REST adapter + webhook signature verification / replay protection
+- Production-oriented HTTP ingress (`ingress-serve`, disabled by default)
+- Persistent webhook receipts + cross-event completion dedupe
+- Automation payload→`context` prompt bridge (see `docs/AUTOMATION_PAYLOAD_CONTRACT.md`)
 - Execution journal, state machine, mock dry-run loop (REJECT → ACCEPT)
-- CLI: `dry-run`, `executor-status`, `automation-dispatch-dry`, `review-smoke`
+- CLI: `dry-run`, `executor-status`, `automation-dispatch-dry`, `ingress-serve`, `review-smoke`
 
 ## What is not live yet
 
 - Automation webhook send (`NADS_AUTOMATION_ENABLED=false` until account eligibility verified)
-- Hosted GitHub → NADS ingress deployment
-- PostgreSQL + Redis + BullMQ production workers
+- Hosted TLS termination + public GitHub → NADS ingress deployment
+- PostgreSQL + Redis + BullMQ production workers (SQL migrations ready through `003`)
 - Development Control Center UI
 
 ## Setup

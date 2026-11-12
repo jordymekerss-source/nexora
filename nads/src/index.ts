@@ -20,12 +20,26 @@ export {
 export { AutomationExecutor, MockAutomationExecutor } from "./adapters/automation-executor.js";
 export { CursorApiError, isTerminalRunStatus, isActiveRunStatus } from "./adapters/cursor-errors.js";
 export { HeuristicReviewer, OpenAIReviewer, createReviewerFromEnv } from "./adapters/openai-reviewer.js";
+export {
+  HttpGitHubAdapter,
+  UnconfiguredGitHubAdapter,
+  createGitHubAdapterFromEnv,
+  type TaskPullRequestVerification,
+} from "./adapters/github-adapter.js";
 export { MemoryStore } from "./db/memory-store.js";
 export { ExecutionJournal } from "./db/execution-journal.js";
+export {
+  MemoryWebhookReceiptStore,
+  FileWebhookReceiptStore,
+  createWebhookReceiptStoreFromEnv,
+  payloadHashOf,
+  type WebhookReceiptStore,
+} from "./db/webhook-receipts.js";
 export { runTaskLoop } from "./orchestrator/loop.js";
 export {
   dispatchAutomationTask,
   completeAutomationTaskFromGitHub,
+  completeAutomationTaskFromCallback,
 } from "./orchestrator/automation-lifecycle.js";
 export { CodeReviewResultSchema } from "./review/schema.js";
 export {
@@ -33,6 +47,8 @@ export {
   AutomationCallbackPayloadSchema,
   nadsTaskMarker,
   parseNadsTaskIdFromText,
+  buildAutomationComposerContext,
+  buildAutomationWebhookBody,
 } from "./contracts/automation-payload.js";
 export {
   verifyGitHubWebhookSignature,
@@ -40,3 +56,4 @@ export {
   GitHubWebhookError,
 } from "./ingress/github-webhook.js";
 export { verifyAutomationCallback, AutomationCallbackError } from "./ingress/automation-callback.js";
+export { createNadsIngressServer, listenNadsIngress } from "./ingress/http-server.js";

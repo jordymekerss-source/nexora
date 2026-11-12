@@ -53,3 +53,69 @@ export function parseNadsTaskIdFromText(text: string | null | undefined): string
   const match = text.match(/nads-task:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/i);
   return match?.[1] ?? null;
 }
+
+/**
+ * Markdown brief placed in Automation webhook `context`.
+ * Cursor Automations inject `context` into the agent prompt; nested JSON alone is not reliable.
+ */
+export function buildAutomationComposerContext(payload: AutomationDispatchPayload): string {
+  const lines = [
+    "# NADS Automation task brief",
+    "",
+    `Task ID: ${payload.taskId}`,
+    `Correlation marker (required in PR body): ${payload.correlation.nadsTaskMarker}`,
+    `Title: ${payload.title}`,
+    "",
+    "## Repository",
+    `- URL: ${payload.repoUrl}`,
+    `- Starting ref: ${payload.startingRef}`,
+    `- Preferred branch prefix: ${payload.correlation.branchPrefix}`,
+    "",
+    "## Attempt",
+    `- Attempt: ${payload.attempt} / ${payload.maxAttempts}`,
+    `- Idempotency key: ${payload.idempotencyKey}`,
+    "",
+    "## Task prompt",
+    payload.prompt,
+    "",
+    "## Acceptance criteria",
+    ...payload.acceptanceCriteria.map((item, index) => `${index + 1}. ${item}`),
+  ];
+
+  if (payload.priorRejection) {
+    lines.push("", "## Prior rejection", payload.priorRejection);
+  }
+  if (payload.requiredChanges.length > 0) {
+    lines.push(
+      "",
+      "## Required changes",
+      ...payload.requiredChanges.map((item, index) => `${index + 1}. ${item}`),
+    );
+  }
+
+  lines.push(
+    "",
+    "## Safety rules (mandatory)",
+    "- Open a **draft** pull request only when changes are ready.",
+    "- Include the exact correlation marker in the PR body.",
+    "- Prefer the requested branch prefix; do not push to main/production.",
+    "- Do not merge, deploy, or change production secrets.",
+    "- Do not call Cloud Agents API endpoints; you are already running as a Cursor Automation.",
+    "",
+    "Follow this brief exactly.",
+  );
+
+  return lines.join("\n");
+}
+
+/** Outbound webhook JSON: `context` for Composer + structured `nads` for tooling. */
+export function buildAutomationWebhookBody(payload: AutomationDispatchPayload): {
+  context: string;
+  nads: AutomationDispatchPayload;
+} {
+  const parsed = AutomationDispatchPayloadSchema.parse(payload);
+  return {
+    context: buildAutomationComposerContext(parsed),
+    nads: parsed,
+  };
+}

@@ -43,10 +43,22 @@ Preferred execution: **Automation webhook + GitHub event completion**.
 | `cd nads && npm run automation-dispatch-dry` | disabled send; no `/v1/agents` |
 | `cd nads && npm run cursor-smoke` | **BLOCKED** unless `NADS_ALLOW_CURSOR_API_SMOKE=true` |
 
+### P0 — Reliable Automation infrastructure (this update)
+
+| Item | Status |
+|---|---|
+| HTTP ingress `/health` `/ready` `/webhooks/*` | Implemented; `NADS_INGRESS_ENABLED=false` by default |
+| Persistent webhook receipts + completion claims | Memory/file stores + SQL `003_webhook_receipts_hardening.sql` |
+| Cross-event lifecycle dedupe | Exclusive `completion_claim` per task |
+| Dispatch timeout / bounded retry / no ambiguous retry | `AutomationExecutor` |
+| GitHub `branchExists` + `verifyTaskPullRequest` | Fail-closed without `GITHUB_TOKEN` |
+| Payload→Composer `context` bridge | `buildAutomationWebhookBody` + contract doc |
+
 ### Remaining blockers (activation)
 
 1. Confirm Automations + webhook available on the account plan  
-2. Create Automation, pin Composer/Grok, copy URL/key  
-3. Configure GitHub webhook secret to NADS ingress when hosted  
-4. Optionally enable on-demand with **low hard limit** — do **not** prepaid top-up / auto top-up for NADS  
-5. Flip `NADS_AUTOMATION_ENABLED=true` only after eligibility verified  
+2. Create Automation, pin Composer/Grok, copy URL/key; paste static instructions from payload contract  
+3. Host ingress behind HTTPS; set `GITHUB_WEBHOOK_SECRET`; register GitHub webhook  
+4. Set `GITHUB_TOKEN` for independent PR/branch verification  
+5. Optionally enable on-demand with **low hard limit** — do **not** prepaid top-up / auto top-up for NADS  
+6. Flip `NADS_AUTOMATION_ENABLED=true` only after eligibility verified  

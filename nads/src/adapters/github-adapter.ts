@@ -33,6 +33,22 @@ export type PullRequestFile = {
   deletions: number;
 };
 
+export type TaskPullRequestVerification = {
+  ok: boolean;
+  branchExists: boolean;
+  prFound: boolean;
+  markerPresent: boolean;
+  repositoryMatch: boolean;
+  notMerged: boolean;
+  draft: boolean | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  headBranch: string | null;
+  headSha: string | null;
+  checks: CheckConclusion[];
+  errors: string[];
+};
+
 export interface GitHubAdapter {
   createBranch(name: string, fromRef: string): Promise<void>;
   listOpenPullRequests(): Promise<PullRequestSummary[]>;
@@ -45,6 +61,19 @@ export interface GitHubAdapter {
   getCheckConclusions(ref: string): Promise<CheckConclusion[]>;
   getPullRequest?(number: number): Promise<PullRequestDetail>;
   listPullRequestFiles?(number: number): Promise<PullRequestFile[]>;
+  /** True when refs/heads/<name> exists. Fail-closed without token. */
+  branchExists(name: string): Promise<boolean>;
+  /**
+   * Independently verify a task's PR/branch evidence on this repository.
+   * Requires GITHUB_TOKEN-backed adapter.
+   */
+  verifyTaskPullRequest(input: {
+    taskMarker: string;
+    expectedOwner: string;
+    expectedRepo: string;
+    prNumber?: number | null;
+    expectedBranchPrefix?: string | null;
+  }): Promise<TaskPullRequestVerification>;
 }
 
 /** Safe stub until token-backed client is configured. */
@@ -65,6 +94,12 @@ export class UnconfiguredGitHubAdapter implements GitHubAdapter {
     throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
   }
   async listPullRequestFiles(): Promise<PullRequestFile[]> {
+    throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
+  }
+  async branchExists(): Promise<boolean> {
+    throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
+  }
+  async verifyTaskPullRequest(): Promise<TaskPullRequestVerification> {
     throw new Error("GitHub adapter not configured (set GITHUB_TOKEN)");
   }
 }
@@ -167,6 +202,110 @@ export class HttpGitHubAdapter implements GitHubAdapter {
       ref: `refs/heads/${name}`,
       sha: source.object.sha,
     });
+  }
+
+  async branchExists(name: string): Promise<boolean> {
+    const ref = name.startsWith("refs/") ? name.replace(/^refs\//, "") : `heads/${name}`;
+    try {
+      await this.request<GhRefResponse>("GET", this.repoPath(`/git/ref/${ref}`));
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      if (/→ 404:/.test(message)) return false;
+      throw error;
+    }
+  }
+
+  async verifyTaskPullRequest(input: {
+    taskMarker: string;
+    expectedOwner: string;
+    expectedRepo: string;
+    prNumber?: number | null;
+    expectedBranchPrefix?: string | null;
+  }): Promise<TaskPullRequestVerification> {
+    const errors: string[] = [];
+    const ownerMatch =
+      this.owner.toLowerCase() === input.expectedOwner.toLowerCase() &&
+      this.repo.toLowerCase() === input.expectedRepo.toLowerCase();
+    if (!ownerMatch) {
+      errors.push(
+        `repository mismatch: adapter ${this.owner}/${this.repo} ≠ expected ${input.expectedOwner}/${input.expectedRepo}`,
+      );
+    }
+
+    let pr: PullRequestDetail | null = null;
+    if (input.prNumber && this.getPullRequest) {
+      try {
+        pr = await this.getPullRequest(input.prNumber);
+      } catch (error: unknown) {
+        errors.push(error instanceof Error ? error.message.slice(0, 200) : "getPullRequest failed");
+      }
+    } else {
+      const open = await this.listOpenPullRequests();
+      const match = open.find((row) =>
+        input.expectedBranchPrefix ? row.headRef.startsWith(input.expectedBranchPrefix) : false,
+      );
+      if (match?.number) {
+        pr = (await this.getPullRequest?.(match.number)) ?? null;
+      }
+    }
+
+    const markerPresent = Boolean(
+      pr &&
+        (pr.body.includes(input.taskMarker) ||
+          pr.title.includes(input.taskMarker) ||
+          pr.headRef.includes(input.taskMarker.replace("nads-task:", ""))),
+    );
+    if (pr && !markerPresent) {
+      errors.push("task marker missing from PR body/title/branch");
+    }
+    if (!pr) {
+      errors.push("pull request not found");
+    }
+    if (pr?.merged) {
+      errors.push("pull request is already merged");
+    }
+
+    const branchName = pr?.headRef ?? input.expectedBranchPrefix ?? null;
+    let branchExists = false;
+    if (branchName) {
+      try {
+        branchExists = await this.branchExists(branchName);
+      } catch (error: unknown) {
+        errors.push(error instanceof Error ? error.message.slice(0, 200) : "branchExists failed");
+      }
+    }
+    if (branchName && !branchExists) {
+      errors.push(`branch not found: ${branchName}`);
+    }
+
+    const checks =
+      pr?.headSha != null ? await this.getCheckConclusions(pr.headSha).catch(() => []) : [];
+
+    const notMerged = Boolean(pr && !pr.merged);
+    const ok =
+      ownerMatch &&
+      Boolean(pr) &&
+      markerPresent &&
+      notMerged &&
+      (branchName ? branchExists : true) &&
+      errors.length === 0;
+
+    return {
+      ok,
+      branchExists,
+      prFound: Boolean(pr),
+      markerPresent,
+      repositoryMatch: ownerMatch,
+      notMerged,
+      draft: pr?.draft ?? null,
+      prNumber: pr?.number ?? null,
+      prUrl: pr?.url ?? null,
+      headBranch: pr?.headRef ?? null,
+      headSha: pr?.headSha ?? null,
+      checks,
+      errors,
+    };
   }
 
   async listOpenPullRequests(): Promise<PullRequestSummary[]> {

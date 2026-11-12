@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { TaskStatus } from "../state-machine.js";
 import { assertTransition } from "../state-machine.js";
+import { MemoryWebhookReceiptStore, type WebhookReceiptStore } from "./webhook-receipts.js";
 
 export type DevelopmentTask = {
   id: string;
@@ -55,6 +56,8 @@ export type AgentSessionRecord = {
 
 export class MemoryStore {
   readonly projectId: string;
+  /** Default receipt/completion-claim store for this in-memory project. */
+  readonly receipts: WebhookReceiptStore;
   tasks: DevelopmentTask[] = [];
   events: DevelopmentEvent[] = [];
   agentSessions: AgentSessionRecord[] = [];
@@ -66,8 +69,9 @@ export class MemoryStore {
     maxConcurrentAgents: 1,
   };
 
-  constructor(projectId = randomUUID()) {
+  constructor(projectId = randomUUID(), receipts?: WebhookReceiptStore) {
     this.projectId = projectId;
+    this.receipts = receipts ?? new MemoryWebhookReceiptStore();
   }
 
   seedTask(partial: Partial<DevelopmentTask> & Pick<DevelopmentTask, "title">): DevelopmentTask {

@@ -168,6 +168,26 @@ describe("automation webhook execution lifecycle", () => {
           { filename: "README.md", status: "modified", additions: 1, deletions: 0, patch: "+ok" },
         ];
       },
+      async branchExists() {
+        return true;
+      },
+      async verifyTaskPullRequest() {
+        return {
+          ok: true,
+          branchExists: true,
+          prFound: true,
+          markerPresent: true,
+          repositoryMatch: true,
+          notMerged: true,
+          draft: true,
+          prNumber: 7,
+          prUrl: "https://github.com/o/r/pull/7",
+          headBranch: "cursor/nads-x",
+          headSha: "abc",
+          checks: [{ name: "test", conclusion: "success" }],
+          errors: [],
+        };
+      },
     };
 
     const outcome = await completeAutomationTaskFromGitHub({

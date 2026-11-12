@@ -17,6 +17,7 @@
     "provider-mode": "tsx src/cli.ts provider-mode",
     "executor-status": "tsx src/cli.ts executor-status",
     "automation-dispatch-dry": "tsx src/cli.ts automation-dispatch-dry",
+    "ingress-serve": "tsx src/cli.ts ingress-serve",
     "cursor-smoke": "tsx src/cli.ts cursor-smoke"
   },
   "engines": {
