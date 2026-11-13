@@ -21,6 +21,11 @@ import {
 } from "./db/webhook-receipts.js";
 import { createDispatchStateStoreFromEnv } from "./db/dispatch-state.js";
 import {
+  createOneShotDispatchGateFromEnv,
+  readSingleTaskModePolicy,
+} from "./db/one-shot-gate.js";
+import { applyNadsMigrations } from "./db/pg-migrate.js";
+import {
   assertProductionPersistenceConfig,
   resolvePersistenceTier,
 } from "./config/production-guards.js";
@@ -619,6 +624,7 @@ async function readinessStatus(): Promise<void> {
         productionGuard,
         redisRequired: false,
         redisNote: "REDIS_URL is optional placeholder — NADS Automation path does not require Redis",
+        singleTask: readSingleTaskModePolicy(process.env),
         gates: {
           automationSend: "keep false until controlled staging activation",
           ingress: "keep false until HTTPS + secrets configured",
@@ -629,6 +635,91 @@ async function readinessStatus(): Promise<void> {
       2,
     ),
   );
+}
+
+/** Apply SQL migrations 001–005 using compiled runtime (no tsx required). */
+async function migrate(): Promise<void> {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    console.log(JSON.stringify({ ok: false, error: "DATABASE_URL required for migrate" }));
+    process.exitCode = 2;
+    return;
+  }
+  await applyNadsMigrations(url);
+  console.log(
+    JSON.stringify({
+      ok: true,
+      migrations: ["001", "002", "003", "004", "005"],
+      note: "Applied via compiled pg-migrate (production-safe)",
+    }),
+  );
+}
+
+async function oneShotArm(): Promise<void> {
+  const taskId = (process.argv[3] ?? process.env.NADS_APPROVED_TASK_ID ?? "").trim();
+  if (!taskId) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: "Usage: one-shot-arm <taskUuid>  (or set NADS_APPROVED_TASK_ID)",
+      }),
+    );
+    process.exitCode = 2;
+    return;
+  }
+  const gate = createOneShotDispatchGateFromEnv();
+  const record = await gate.arm(taskId);
+  console.log(JSON.stringify({ ok: true, action: "armed", record }, null, 2));
+}
+
+async function oneShotRearm(): Promise<void> {
+  const taskId = (process.argv[3] ?? process.env.NADS_APPROVED_TASK_ID ?? "").trim();
+  if (!taskId) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: "Usage: one-shot-rearm <taskUuid>  (or set NADS_APPROVED_TASK_ID)",
+      }),
+    );
+    process.exitCode = 2;
+    return;
+  }
+  const gate = createOneShotDispatchGateFromEnv();
+  const record = await gate.rearm(taskId);
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        action: "rearmed",
+        record,
+        note: "Explicit re-arm only — does not send an Automation POST",
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function oneShotStatus(): Promise<void> {
+  const gate = createOneShotDispatchGateFromEnv();
+  const record = await gate.get();
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        policy: readSingleTaskModePolicy(process.env),
+        gate: record,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function oneShotDisarm(): Promise<void> {
+  const gate = createOneShotDispatchGateFromEnv();
+  const record = await gate.disarm();
+  console.log(JSON.stringify({ ok: true, action: "disarmed", record }, null, 2));
 }
 
 const command = process.argv[2] ?? "dry-run";
@@ -642,6 +733,11 @@ const runners: Record<string, () => Promise<void>> = {
   "executor-status": showExecutorStatus,
   "automation-dispatch-dry": automationDispatchDry,
   "readiness-status": readinessStatus,
+  migrate,
+  "one-shot-arm": oneShotArm,
+  "one-shot-rearm": oneShotRearm,
+  "one-shot-status": oneShotStatus,
+  "one-shot-disarm": oneShotDisarm,
   "ingress-serve": ingressServe,
   "cursor-smoke": cursorSmoke,
 };
@@ -649,7 +745,7 @@ const runners: Record<string, () => Promise<void>> = {
 const run = runners[command];
 if (!run) {
   console.error(
-    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | readiness-status | ingress-serve | cursor-smoke`,
+    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | readiness-status | migrate | one-shot-arm | one-shot-rearm | one-shot-status | one-shot-disarm | ingress-serve | cursor-smoke`,
   );
   process.exit(1);
 }

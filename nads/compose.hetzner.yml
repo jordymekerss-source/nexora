@@ -1,0 +1,92 @@
+# Hetzner VPS — receive-only NADS staging/production compose.
+# PostgreSQL is internal-only. NADS binds host 127.0.0.1:8787 (nginx terminates TLS).
+# Requires env file (.env.hetzner) — never commit real secrets.
+#
+#   docker compose -f compose.hetzner.yml --env-file .env.hetzner up -d
+#
+# Keep NADS_AUTOMATION_ENABLED=false until an operator explicitly arms one-shot send.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nads}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-nads}
+    volumes:
+      - nads_pg_data:/var/lib/postgresql/data
+    # Intentionally NO ports: — Postgres stays on the Docker network only.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - nads_internal
+
+  nads:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${NADS_IMAGE:-nexora-nads:hetzner}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ${NADS_ENV_FILE:-.env.hetzner}
+    environment:
+      # Production receive-only defaults (secrets still come from env_file)
+      NADS_PRODUCTION: "true"
+      NADS_EXECUTOR: automation
+      NADS_AUTOMATION_ENABLED: ${NADS_AUTOMATION_ENABLED:-false}
+      NADS_INGRESS_ENABLED: ${NADS_INGRESS_ENABLED:-true}
+      NADS_ALLOW_CURSOR_API_SMOKE: "false"
+      NADS_WEBHOOK_RECEIPT_STORE: postgres
+      NADS_DISPATCH_STATE_STORE: postgres
+      NADS_REQUIRE_PG_RECEIPTS: "true"
+      NADS_INGRESS_HOST: "0.0.0.0"
+      NADS_INGRESS_PORT: "8787"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nads}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nads}
+      # Optional Automation credentials until configured (empty = send still fail-closed when enabled)
+      NADS_AUTOMATION_WEBHOOK_URL: ${NADS_AUTOMATION_WEBHOOK_URL:-}
+      NADS_AUTOMATION_WEBHOOK_KEY: ${NADS_AUTOMATION_WEBHOOK_KEY:-}
+      NADS_AUTOMATION_CALLBACK_SECRET: ${NADS_AUTOMATION_CALLBACK_SECRET:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?GITHUB_WEBHOOK_SECRET is required}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:?GITHUB_TOKEN is required}
+      GITHUB_REPO: ${GITHUB_REPO:-jordymekerss-source/nexora}
+      NADS_REPO_URL: ${NADS_REPO_URL:-https://github.com/jordymekerss-source/nexora}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      NADS_OPENAI_MODEL: ${NADS_OPENAI_MODEL:-gpt-4o-mini}
+      NADS_MODE: ${NADS_MODE:-live}
+      NADS_SINGLE_TASK_MODE: ${NADS_SINGLE_TASK_MODE:-true}
+      NADS_APPROVED_TASK_ID: ${NADS_APPROVED_TASK_ID:-}
+      NADS_ONE_SHOT_GATE_STORE: ${NADS_ONE_SHOT_GATE_STORE:-postgres}
+    ports:
+      # Host loopback only — never publish 8787 on a public interface.
+      - "127.0.0.1:8787:8787"
+    healthcheck:
+      # node:22-bookworm-slim has no curl; use built-in fetch against loopback.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    command: ["node", "dist/cli.js", "ingress-serve"]
+    networks:
+      - nads_internal
+
+volumes:
+  nads_pg_data:
+
+networks:
+  nads_internal:
+    driver: bridge

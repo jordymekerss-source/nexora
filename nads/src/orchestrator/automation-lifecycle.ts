@@ -24,6 +24,11 @@ import {
   classifyDispatchStatus,
   type DispatchStateStore,
 } from "../db/dispatch-state.js";
+import {
+  createOneShotDispatchGateFromEnv,
+  readSingleTaskModePolicy,
+  type OneShotDispatchGate,
+} from "../db/one-shot-gate.js";
 import type { VerifiedGitHubWebhook } from "../ingress/github-webhook.js";
 import { isAutomationCompletionEvent } from "../ingress/github-webhook.js";
 import type { AutomationCallbackPayload } from "../contracts/automation-payload.js";
@@ -151,6 +156,9 @@ export async function dispatchAutomationTask(options: {
   requiredChanges?: string[];
   receipts?: WebhookReceiptStore;
   dispatchState?: DispatchStateStore;
+  oneShotGate?: OneShotDispatchGate;
+  /** Override process env for single-task policy (tests). */
+  singleTaskEnv?: NodeJS.ProcessEnv;
 }): Promise<AutomationDispatchOutcome> {
   const { store, executor } = options;
   if (store.settings.emergencyStop) {
@@ -197,6 +205,28 @@ export async function dispatchAutomationTask(options: {
         "Prior Automation POST outcome is uncertain — call reconcileUncertainDispatch before another dispatch",
       uncertain: true,
     };
+  }
+
+  const singleTask = readSingleTaskModePolicy(options.singleTaskEnv ?? process.env);
+  if (singleTask.enabled) {
+    if (!singleTask.approvedTaskId) {
+      return {
+        taskId: task.id,
+        sent: false,
+        status: "single_task_misconfigured",
+        idempotencyKey: task.dispatchIdempotencyKey ?? `dispatch:${task.id}:blocked`,
+        error: "NADS_SINGLE_TASK_MODE=true requires NADS_APPROVED_TASK_ID",
+      };
+    }
+    if (singleTask.approvedTaskId !== task.id) {
+      return {
+        taskId: task.id,
+        sent: false,
+        status: "single_task_rejected",
+        idempotencyKey: task.dispatchIdempotencyKey ?? `dispatch:${task.id}:blocked`,
+        error: `Task ${task.id} is not the approved one-shot task (${singleTask.approvedTaskId})`,
+      };
+    }
   }
 
   const attempt = Math.max(1, task.retryCount + 1);
@@ -248,6 +278,37 @@ export async function dispatchAutomationTask(options: {
       executionId:
         typeof existing.payload.executionId === "string" ? existing.payload.executionId : undefined,
     };
+  }
+
+  // One-shot gate: consume atomic authorization only when a live Automation POST will be attempted.
+  const env = options.singleTaskEnv ?? process.env;
+  const willAttemptNetworkSend =
+    singleTask.enabled &&
+    executor.kind === "automation" &&
+    (env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() === "true" &&
+    Boolean(env.NADS_AUTOMATION_WEBHOOK_URL?.trim() && env.NADS_AUTOMATION_WEBHOOK_KEY?.trim());
+
+  if (willAttemptNetworkSend) {
+    const gate = options.oneShotGate ?? createOneShotDispatchGateFromEnv(env);
+    const consumed = await gate.tryConsume({
+      taskId: task.id,
+      consumer: `pid:${process.pid}`,
+    });
+    if (!consumed.ok) {
+      store.appendEvent({
+        taskId: task.id,
+        eventType: "automation.dispatch.one_shot_blocked",
+        payload: { reason: consumed.reason, classification: "blocked" },
+        idempotencyKey: `dispatch.oneshot:${task.id}:${consumed.reason}:${Date.now()}`,
+      });
+      return {
+        taskId: task.id,
+        sent: false,
+        status: `one_shot_${consumed.reason}`,
+        idempotencyKey: payload.idempotencyKey,
+        error: `One-shot gate refused Automation POST (${consumed.reason}) — re-arm explicitly after review`,
+      };
+    }
   }
 
   const result = await executor.dispatch({ payload });

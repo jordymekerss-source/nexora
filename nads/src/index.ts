@@ -52,6 +52,14 @@ export {
   resolvePersistenceTier,
   isProductionLike,
 } from "./config/production-guards.js";
+export {
+  MemoryOneShotDispatchGate,
+  FileOneShotDispatchGate,
+  PostgresOneShotDispatchGate,
+  createOneShotDispatchGateFromEnv,
+  readSingleTaskModePolicy,
+  type OneShotDispatchGate,
+} from "./db/one-shot-gate.js";
 export { applyNadsMigrations } from "./db/pg-migrate.js";
 export { runTaskLoop } from "./orchestrator/loop.js";
 export {

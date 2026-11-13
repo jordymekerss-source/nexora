@@ -8,6 +8,7 @@ const MIGRATIONS = [
   "002_automation_executor.sql",
   "003_webhook_receipts_hardening.sql",
   "004_completion_claim_leases.sql",
+  "005_one_shot_dispatch_gate.sql",
 ] as const;
 
 export function migrationsDir(): string {
@@ -63,6 +64,7 @@ export async function resetNadsTables(connectionString: string): Promise<void> {
       truncate table task_completion_claims,
                      webhook_receipts,
                      agent_sessions,
+                     one_shot_dispatch_gates,
                      development_tasks,
                      development_projects
       cascade

@@ -18,6 +18,11 @@
     "executor-status": "tsx src/cli.ts executor-status",
     "automation-dispatch-dry": "tsx src/cli.ts automation-dispatch-dry",
     "readiness-status": "tsx src/cli.ts readiness-status",
+    "migrate": "tsx src/cli.ts migrate",
+    "one-shot-arm": "tsx src/cli.ts one-shot-arm",
+    "one-shot-rearm": "tsx src/cli.ts one-shot-rearm",
+    "one-shot-status": "tsx src/cli.ts one-shot-status",
+    "one-shot-disarm": "tsx src/cli.ts one-shot-disarm",
     "ingress-serve": "tsx src/cli.ts ingress-serve",
     "cursor-smoke": "tsx src/cli.ts cursor-smoke"
   },
