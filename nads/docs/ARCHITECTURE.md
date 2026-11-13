@@ -21,12 +21,12 @@
 A dedicated orchestrator that:
 
 1. Selects the next development task from a prioritized roadmap.  
-2. Generates a Cursor prompt (OpenAI planner).  
-3. Starts a Cursor Cloud Agent run via **verified** `https://api.cursor.com/v1` endpoints.  
-4. Collects run status, artifacts, git refs.  
-5. Runs / records quality gates (typecheck, unit, e2e) when available.  
+2. Generates a structured prompt (OpenAI planner).  
+3. **Preferred:** dispatches via Cursor **Automation webhook** (`NADS_EXECUTOR=automation`) — not prepaid-gated `POST /v1/agents`.  
+4. Completes via **GitHub webhooks** (PR/checks) + optional automation callback.  
+5. **Optional explicit fallback:** `NADS_EXECUTOR=cursor` → `HttpCursorAgentProvider` (never automatic).  
 6. Sends evidence to OpenAI structured review → `ACCEPT` / `REJECT` / `BLOCKED`.  
-7. On reject: recovery prompt + continue run (max retries).  
+7. On reject: recovery dispatch (max retries).  
 8. On accept: mark task complete, pick next.  
 9. Honors emergency stop, budgets, locks, idempotent events.
 
@@ -52,19 +52,23 @@ Auth: Basic (`API_KEY:`) or Bearer.
 | POST | `/v1/agents/{id}/archive` | Archive |
 | DELETE | `/v1/agents/{id}` | Delete |
 
-**Webhooks:** docs state webhooks are *coming soon* for v1; legacy v0 still has them. NADS therefore uses **polling + GitHub webhooks**, not invented Cursor webhooks.
+**Cloud Agents API webhooks:** still “coming soon” for v1. NADS preferred completion bus is **GitHub webhooks** (+ Automation webhook for dispatch).
 
-Adapter interface: `CursorAgentProvider` → `HttpCursorAgentProvider` (real) / `MockCursorAgentProvider` (tests / dry-run).
+Executors: `TaskExecutor` → `automation` (preferred) | `cursor` (explicit optional) | `mock`.  
+`HttpCursorAgentProvider` retained for `NADS_EXECUTOR=cursor` only.
 
 ### OpenAI API
 
-- `POST https://api.openai.com/v1/chat/completions` with JSON schema / structured outputs for reviews.  
-- Model pinned via `NADS_OPENAI_MODEL` (default configurable; never hardcode secrets).
+- Official Node SDK: `openai` (installed **only** in `/nads`, never in the SaaS frontend bundle).  
+- Chat Completions Structured Outputs: `client.chat.completions.parse` + `zodResponseFormat`.  
+- Docs: [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [openai-node](https://github.com/openai/openai-node).  
+- Model pinned via `NADS_OPENAI_MODEL` (default `gpt-4o-mini`; never hardcode secrets).  
+- `NADS_MODE=dry-run` → `HeuristicReviewer`; `live` + key → `OpenAIReviewer`.
 
 ### GitHub
 
-- REST via Octokit patterns: branches, PRs, checks, webhooks.  
-- Never push to `main` / production. Integration branch only (e.g. `develop` / `cursor/integration`).
+- Official REST (`https://api.github.com`) via `HttpGitHubAdapter` when `GITHUB_TOKEN` is set.  
+- Draft PRs only in this phase; never auto-merge to `main` / production. Integration branch only (e.g. `cursor/integration`).
 
 ## 4. Components
 
@@ -84,13 +88,15 @@ nads/
 
 ```
 Task READY
-  → CONTEXT_GATHERING (repo metadata / prior reviews)
-  → PROMPT_CREATED (OpenAI planner or template)
-  → AGENT_QUEUED / AGENT_RUNNING (Cursor POST /v1/agents or /runs)
-  → TESTING (record commands/results; optional local gates)
+  → CONTEXT_GATHERING
+  → PROMPT_CREATED
+  → AGENT_QUEUED / AGENT_RUNNING
+       preferred: AutomationExecutor.dispatch (webhook; disabled until enabled)
+       optional: HttpCursorAgentProvider (explicit NADS_EXECUTOR=cursor only)
+  → GitHub webhook completion (PR/checks) → TESTING
   → REVIEWING (OpenAI structured review)
   → ACCEPTED → NEXT_TASK
-     or REVISION_REQUIRED → PROMPT_CREATED (≤ max_retries)
+     or REVISION_REQUIRED → repair automation dispatch (≤ max_retries)
      or BLOCKED / STOPPED
 ```
 
@@ -107,12 +113,13 @@ Task READY
 
 | Phase | Status |
 |---|---|
-| 1 Architecture + audit | This doc |
-| 2 DB + orchestrator basis | In progress in `/nads` |
-| 3 GitHub adapter | Stub + interface |
+| 1 Architecture + audit | Done |
+| 2 DB + orchestrator basis | Done (memory store + SQL schema) |
+| 3 GitHub adapter | HTTP adapter + env factory (token-gated) |
 | 4 Cursor HTTP adapter | Implemented against v1 docs |
-| 5 GPT reviewer | Structured schema + client |
-| 6–10 | Test infra, recovery, dashboard, security, e2e loop |
+| 5 GPT reviewer | Official SDK + strict schema + review-smoke |
+| 6 Live Cursor provider | HTTP adapter + SSE/poll wait + fail-closed factory + journal |
+| 7–10 | Dashboard, Postgres/Redis workers, security hardening, full e2e autonomy |
 
 ## 8. Acceptance criteria (Phase 1–2)
 
@@ -120,5 +127,10 @@ Task READY
 - [x] Separate `/nads` package not imported by SaaS runtime  
 - [x] State machine rejects illegal transitions (unit tested)  
 - [x] Mock end-to-end loop: create → reject → recover → accept  
-- [ ] Live Cursor/OpenAI calls — require API keys (not available in this worker by default)  
-- [ ] PostgreSQL/Redis/BullMQ production wiring — schema ready; runtime memory for dry-run  
+- [x] Official OpenAI SDK reviewer path (server-side `/nads` only)  
+- [x] GitHub HTTP adapter (draft PRs; requires `GITHUB_TOKEN` for live)  
+- [x] Live Cursor HTTP provider (unit-tested; live smoke gated on `CURSOR_API_KEY`)  
+- [x] Fail closed when `NADS_MODE=live` without `CURSOR_API_KEY`  
+- [x] Execution journal for restart / duplicate-create prevention  
+- [ ] Live Cursor smoke PASS — blocked until `CURSOR_API_KEY` is provisioned  
+- [ ] PostgreSQL/Redis/BullMQ production wiring — schema ready; memory + `.nads/execution-journal.json` for now  

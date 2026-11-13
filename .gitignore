@@ -25,6 +25,8 @@ yarn-error.log*
 # Local env
 .env
 .env*.local
+nads/.env.hetzner
+nads/.env.hetzner.local
 
 # Demo file store
 .data/
@@ -47,3 +49,4 @@ yarn-error.log*
 /playwright/.auth/
 nads/node_modules/
 nads/dist/
+nads/.nads/

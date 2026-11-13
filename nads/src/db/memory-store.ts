@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { TaskStatus } from "../state-machine.js";
 import { assertTransition } from "../state-machine.js";
+import { MemoryWebhookReceiptStore, type WebhookReceiptStore } from "./webhook-receipts.js";
 
 export type DevelopmentTask = {
   id: string;
@@ -16,6 +17,21 @@ export type DevelopmentTask = {
   assignedAgentId?: string;
   lastPrompt?: string;
   lastResult?: string;
+  executorKind?: "automation" | "cursor" | "mock";
+  externalExecutionId?: string;
+  prNumber?: number;
+  prUrl?: string;
+  headBranch?: string;
+  dispatchIdempotencyKey?: string;
+  /** Bound at dispatch — used for mandatory GitHub PR verification. */
+  expectedRepoUrl?: string;
+  expectedStartingRef?: string;
+  expectedBranchPrefix?: string;
+  expectedTaskMarker?: string;
+  /** Ambiguous Automation POST outcome; blocks re-dispatch until reconcile. */
+  dispatchOutcome?: string;
+  dispatchUncertain?: boolean;
+  dispatchReconcileToken?: string;
 };
 
 export type DevelopmentEvent = {
@@ -35,10 +51,25 @@ export type ProjectSettings = {
   maxConcurrentAgents: number;
 };
 
+export type AgentSessionRecord = {
+  id: string;
+  taskId: string;
+  provider: string;
+  providerAgentId?: string;
+  providerRunId?: string;
+  branchName?: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string;
+};
+
 export class MemoryStore {
   readonly projectId: string;
+  /** Default receipt/completion-claim store for this in-memory project. */
+  readonly receipts: WebhookReceiptStore;
   tasks: DevelopmentTask[] = [];
   events: DevelopmentEvent[] = [];
+  agentSessions: AgentSessionRecord[] = [];
   transitions: Array<{ taskId: string; from: TaskStatus; to: TaskStatus; at: string }> = [];
   settings: ProjectSettings = {
     autonomousEnabled: true,
@@ -47,8 +78,9 @@ export class MemoryStore {
     maxConcurrentAgents: 1,
   };
 
-  constructor(projectId = randomUUID()) {
+  constructor(projectId = randomUUID(), receipts?: WebhookReceiptStore) {
     this.projectId = projectId;
+    this.receipts = receipts ?? new MemoryWebhookReceiptStore();
   }
 
   seedTask(partial: Partial<DevelopmentTask> & Pick<DevelopmentTask, "title">): DevelopmentTask {
@@ -118,5 +150,29 @@ export class MemoryStore {
     };
     this.events.push(event);
     return event;
+  }
+
+  recordAgentSession(input: {
+    taskId: string;
+    providerAgentId?: string;
+    providerRunId?: string;
+    branchName?: string;
+    status: string;
+  }): AgentSessionRecord {
+    const record: AgentSessionRecord = {
+      id: randomUUID(),
+      taskId: input.taskId,
+      provider: "cursor",
+      providerAgentId: input.providerAgentId,
+      providerRunId: input.providerRunId,
+      branchName: input.branchName,
+      status: input.status,
+      startedAt: new Date().toISOString(),
+      finishedAt: ["FINISHED", "ERROR", "CANCELLED", "EXPIRED"].includes(input.status)
+        ? new Date().toISOString()
+        : undefined,
+    };
+    this.agentSessions.push(record);
+    return record;
   }
 }

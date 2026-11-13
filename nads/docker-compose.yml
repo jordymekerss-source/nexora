@@ -1,0 +1,50 @@
+# Local / staging stack for NADS control plane.
+# Does NOT enable Automation send or ingress by default.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nads
+      POSTGRES_PASSWORD: nads
+      POSTGRES_DB: nads
+    ports:
+      - "5432:5432"
+    volumes:
+      - nads_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nads -d nads"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  nads:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://nads:nads@postgres:5432/nads
+      NADS_PRODUCTION: "true"
+      NADS_EXECUTOR: automation
+      NADS_AUTOMATION_ENABLED: "false"
+      NADS_INGRESS_ENABLED: "false"
+      NADS_ALLOW_CURSOR_API_SMOKE: "false"
+      NADS_WEBHOOK_RECEIPT_STORE: postgres
+      NADS_DISPATCH_STATE_STORE: postgres
+      NADS_REQUIRE_PG_RECEIPTS: "true"
+      # Secrets injected at runtime — never commit real values:
+      NADS_AUTOMATION_WEBHOOK_URL: ${NADS_AUTOMATION_WEBHOOK_URL:-}
+      NADS_AUTOMATION_WEBHOOK_KEY: ${NADS_AUTOMATION_WEBHOOK_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPO: ${GITHUB_REPO:-jordymekerss-source/nexora}
+      NADS_REPO_URL: ${NADS_REPO_URL:-https://github.com/jordymekerss-source/nexora}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8787:8787"
+    # Override to serve ingress only after secrets + NADS_INGRESS_ENABLED=true:
+    # command: ["node", "dist/cli.js", "ingress-serve"]
+    command: ["node", "dist/cli.js", "readiness-status"]
+
+volumes:
+  nads_pg:
