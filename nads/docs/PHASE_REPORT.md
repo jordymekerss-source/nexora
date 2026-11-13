@@ -54,7 +54,7 @@ Preferred execution: **Automation webhook + GitHub event completion**.
 | GitHub `branchExists` + `verifyTaskPullRequest` | Fail-closed without `GITHUB_TOKEN` |
 | Payload→Composer `context` bridge | `buildAutomationWebhookBody` + contract doc |
 
-### P0.7 — Production hardening (this update)
+### P0.7 — Production hardening
 
 | Item | Status |
 |---|---|
@@ -64,8 +64,19 @@ Preferred execution: **Automation webhook + GitHub event completion**.
 | Safe Automation POST retry | No retry on 5xx/timeout; uncertain dispatch + explicit reconcile |
 | Integration tests | `p07-*-*.test.ts` including real Postgres when `DATABASE_URL` available |
 
+### Final readiness prep (this update)
+
+| Item | Status |
+|---|---|
+| Durable uncertain dispatch state | memory/file/postgres `DispatchStateStore` + restart tests |
+| Production persistence guards | `assertProductionPersistenceConfig` |
+| Ingress Content-Type + rate limit | Implemented; proxy example in `deploy/nginx-nads.conf.example` |
+| Docker / compose | `nads/Dockerfile`, `nads/docker-compose.yml` |
+| Automation instructions | `docs/AUTOMATION_INSTRUCTIONS.md` |
+| Deployment + activation docs | `DEPLOYMENT.md`, `ACTIVATION_CHECKLIST.md`, `READINESS_REPORT.md` |
+
 Activation flags remain **off**: `NADS_AUTOMATION_ENABLED=false`, `NADS_INGRESS_ENABLED=false`.  
-**Not claiming production readiness** until Automations eligibility + live ingress evidence exist.
+Verdict: **READY AFTER SPECIFIC MANUAL STEPS** (see `docs/READINESS_REPORT.md`).
 
 ### Remaining blockers (activation)
 

@@ -66,6 +66,8 @@ Later / optional:
 
 **Production receipt store:** set `NADS_WEBHOOK_RECEIPT_STORE=postgres`, `DATABASE_URL`, and apply migrations `001`–`004`. See [`docs/DATABASE.md`](docs/DATABASE.md). File store is single-node only; memory is for tests.
 
+**Activation prep:** [`docs/READINESS_REPORT.md`](docs/READINESS_REPORT.md) · [`docs/ACTIVATION_CHECKLIST.md`](docs/ACTIVATION_CHECKLIST.md) · [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · [`docs/AUTOMATION_INSTRUCTIONS.md`](docs/AUTOMATION_INSTRUCTIONS.md)
+
 Default `NADS_MODE=dry-run` uses mocks and never spends provider budget.
 
 ## Security boundaries

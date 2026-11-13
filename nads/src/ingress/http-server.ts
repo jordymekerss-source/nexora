@@ -4,6 +4,7 @@ import type { Reviewer } from "../adapters/openai-reviewer.js";
 import type { MemoryStore } from "../db/memory-store.js";
 import type { ExecutionJournal } from "../db/execution-journal.js";
 import type { WebhookReceiptStore } from "../db/webhook-receipts.js";
+import type { DispatchStateStore } from "../db/dispatch-state.js";
 import {
   completeAutomationTaskFromCallback,
   completeAutomationTaskFromGitHub,
@@ -17,10 +18,17 @@ export type NadsIngressOptions = {
   reviewer: Reviewer;
   receipts: WebhookReceiptStore;
   journal?: ExecutionJournal;
+  dispatchState?: DispatchStateStore;
   githubWebhookSecret: string;
   automationCallbackSecret?: string;
   maxBodyBytes?: number;
   readyCheck?: () => boolean | Promise<boolean>;
+  /**
+   * Simple in-process rate limit (requests per window).
+   * Production should also enforce limits at the reverse proxy.
+   */
+  rateLimitPerWindow?: number;
+  rateLimitWindowMs?: number;
 };
 
 const SAFE_JSON_HEADERS = {
@@ -76,6 +84,33 @@ function headerMap(req: IncomingMessage): Record<string, string | undefined> {
   return out;
 }
 
+function requireJsonContentType(req: IncomingMessage): boolean {
+  const raw = req.headers["content-type"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return false;
+  return value.toLowerCase().includes("application/json");
+}
+
+class SlidingWindowRateLimiter {
+  private readonly hits = new Map<string, number[]>();
+  constructor(
+    private readonly limit: number,
+    private readonly windowMs: number,
+  ) {}
+
+  allow(key: string, now = Date.now()): boolean {
+    const cutoff = now - this.windowMs;
+    const prior = (this.hits.get(key) ?? []).filter((ts) => ts > cutoff);
+    if (prior.length >= this.limit) {
+      this.hits.set(key, prior);
+      return false;
+    }
+    prior.push(now);
+    this.hits.set(key, prior);
+    return true;
+  }
+}
+
 /**
  * Production-oriented NADS ingress (HTTP).
  * Terminate TLS at the reverse proxy / platform edge; this server expects raw bodies.
@@ -83,6 +118,13 @@ function headerMap(req: IncomingMessage): Record<string, string | undefined> {
  */
 export function createNadsIngressServer(options: NadsIngressOptions): Server {
   const maxBodyBytes = options.maxBodyBytes ?? 1_048_576;
+  const rateLimiter =
+    options.rateLimitPerWindow && options.rateLimitPerWindow > 0
+      ? new SlidingWindowRateLimiter(
+          options.rateLimitPerWindow,
+          options.rateLimitWindowMs ?? 60_000,
+        )
+      : null;
 
   return createServer(async (req, res) => {
     try {
@@ -98,6 +140,20 @@ export function createNadsIngressServer(options: NadsIngressOptions): Server {
         const ready = options.readyCheck ? await options.readyCheck() : true;
         sendJson(res, ready ? 200 : 503, { ok: ready, service: "nads-ingress" });
         return;
+      }
+
+      if (method === "POST" && (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/automation-callback")) {
+        if (rateLimiter) {
+          const ip = req.socket.remoteAddress ?? "unknown";
+          if (!rateLimiter.allow(`${url.pathname}:${ip}`)) {
+            sendJson(res, 429, { ok: false, error: "rate_limited" });
+            return;
+          }
+        }
+        if (!requireJsonContentType(req)) {
+          sendJson(res, 415, { ok: false, error: "unsupported_media_type" });
+          return;
+        }
       }
 
       if (method === "POST" && url.pathname === "/webhooks/github") {

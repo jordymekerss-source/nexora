@@ -20,6 +20,10 @@ import {
   payloadHashOf,
   type WebhookReceiptStore,
 } from "../db/webhook-receipts.js";
+import {
+  classifyDispatchStatus,
+  type DispatchStateStore,
+} from "../db/dispatch-state.js";
 import type { VerifiedGitHubWebhook } from "../ingress/github-webhook.js";
 import { isAutomationCompletionEvent } from "../ingress/github-webhook.js";
 import type { AutomationCallbackPayload } from "../contracts/automation-payload.js";
@@ -93,19 +97,27 @@ function buildDispatchPayload(input: {
 
 /**
  * Explicitly clear an uncertain dispatch so another Automation POST may proceed.
- * Does not call Cursor APIs.
+ * Does NOT call Cursor APIs and does NOT automatically submit another Automation run.
  */
-export function reconcileUncertainDispatch(
+export async function reconcileUncertainDispatch(
   store: MemoryStore,
   taskId: string,
   token: string,
-): { ok: true } | { ok: false; reason: string } {
+  dispatchState?: DispatchStateStore,
+): Promise<{ ok: true; classification: "reconciled" } | { ok: false; reason: string }> {
   const task = store.tasks.find((row) => row.id === taskId);
   if (!task) return { ok: false, reason: "task_not_found" };
-  if (!task.dispatchUncertain) return { ok: false, reason: "not_uncertain" };
-  if (!task.dispatchReconcileToken || task.dispatchReconcileToken !== token) {
-    return { ok: false, reason: "invalid_reconcile_token" };
+
+  if (dispatchState) {
+    const durable = await dispatchState.markReconciled(taskId, token);
+    if (!durable.ok) return { ok: false, reason: durable.reason };
+  } else {
+    if (!task.dispatchUncertain) return { ok: false, reason: "not_uncertain" };
+    if (!task.dispatchReconcileToken || task.dispatchReconcileToken !== token) {
+      return { ok: false, reason: "invalid_reconcile_token" };
+    }
   }
+
   const priorOutcome = task.dispatchOutcome ?? null;
   task.dispatchUncertain = false;
   task.dispatchReconcileToken = undefined;
@@ -113,10 +125,14 @@ export function reconcileUncertainDispatch(
   store.appendEvent({
     taskId: task.id,
     eventType: "automation.dispatch.reconciled",
-    payload: { priorOutcome },
+    payload: {
+      priorOutcome,
+      classification: "reconciled",
+      note: "Reconcile clears uncertainty only — no Automation POST was sent",
+    },
     idempotencyKey: `dispatch.reconcile:${task.id}:${token}`,
   });
-  return { ok: true };
+  return { ok: true, classification: "reconciled" };
 }
 
 /**
@@ -134,6 +150,7 @@ export async function dispatchAutomationTask(options: {
   priorRejection?: string | null;
   requiredChanges?: string[];
   receipts?: WebhookReceiptStore;
+  dispatchState?: DispatchStateStore;
 }): Promise<AutomationDispatchOutcome> {
   const { store, executor } = options;
   if (store.settings.emergencyStop) {
@@ -150,6 +167,25 @@ export async function dispatchAutomationTask(options: {
 
   const task = store.tasks.find((row) => row.id === options.taskId);
   if (!task) throw new Error("Task not found");
+
+  // Hydrate uncertain/correlation binding from durable store (process restart recovery).
+  if (options.dispatchState) {
+    const durable = await options.dispatchState.load(task.id);
+    if (durable) {
+      if (durable.dispatchUncertain) task.dispatchUncertain = true;
+      if (durable.dispatchReconcileToken) {
+        task.dispatchReconcileToken = durable.dispatchReconcileToken;
+      }
+      if (durable.dispatchOutcome) task.dispatchOutcome = durable.dispatchOutcome;
+      if (durable.dispatchIdempotencyKey) {
+        task.dispatchIdempotencyKey = durable.dispatchIdempotencyKey;
+      }
+      if (durable.expectedRepoUrl) task.expectedRepoUrl = durable.expectedRepoUrl;
+      if (durable.expectedStartingRef) task.expectedStartingRef = durable.expectedStartingRef;
+      if (durable.expectedBranchPrefix) task.expectedBranchPrefix = durable.expectedBranchPrefix;
+      if (durable.expectedTaskMarker) task.expectedTaskMarker = durable.expectedTaskMarker;
+    }
+  }
 
   if (task.dispatchUncertain) {
     return {
@@ -223,6 +259,11 @@ export async function dispatchAutomationTask(options: {
     task.dispatchUncertain = true;
     task.dispatchReconcileToken = randomUUID();
   }
+  const classification = classifyDispatchStatus({
+    outcome: result.status,
+    uncertain,
+    sent: result.sent,
+  });
 
   store.appendEvent({
     taskId: task.id,
@@ -230,16 +271,32 @@ export async function dispatchAutomationTask(options: {
     payload: {
       sent: result.sent,
       status: result.status,
+      classification,
       executionId: result.executionId ?? null,
       httpStatus: result.httpStatus ?? null,
       error: result.error ?? null,
       executor: executor.kind,
       attempts: result.attempts ?? null,
       uncertain,
-      // Never persist reconcile token in event payload (ops-only on task record).
+      // Never persist reconcile token in event payload (ops-only on task/dispatch-state).
     },
     idempotencyKey: payload.idempotencyKey,
   });
+
+  if (options.dispatchState) {
+    await options.dispatchState.save({
+      taskId: task.id,
+      projectId: task.projectId,
+      dispatchOutcome: task.dispatchOutcome ?? null,
+      dispatchUncertain: Boolean(task.dispatchUncertain),
+      dispatchReconcileToken: task.dispatchReconcileToken ?? null,
+      expectedRepoUrl: task.expectedRepoUrl ?? null,
+      expectedStartingRef: task.expectedStartingRef ?? null,
+      expectedBranchPrefix: task.expectedBranchPrefix ?? null,
+      expectedTaskMarker: task.expectedTaskMarker ?? null,
+      dispatchIdempotencyKey: task.dispatchIdempotencyKey ?? null,
+    });
+  }
 
   if (result.executionId) {
     task.externalExecutionId = result.executionId;

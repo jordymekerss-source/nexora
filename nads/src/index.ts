@@ -38,6 +38,20 @@ export {
   type WebhookReceiptStore,
   type CompletionLease,
 } from "./db/webhook-receipts.js";
+export {
+  MemoryDispatchStateStore,
+  FileDispatchStateStore,
+  PostgresDispatchStateStore,
+  createDispatchStateStoreFromEnv,
+  classifyDispatchStatus,
+  type DispatchStateStore,
+  type DispatchStateRecord,
+} from "./db/dispatch-state.js";
+export {
+  assertProductionPersistenceConfig,
+  resolvePersistenceTier,
+  isProductionLike,
+} from "./config/production-guards.js";
 export { applyNadsMigrations } from "./db/pg-migrate.js";
 export { runTaskLoop } from "./orchestrator/loop.js";
 export {

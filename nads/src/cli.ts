@@ -15,7 +15,15 @@ import { ExecutionJournal } from "./db/execution-journal.js";
 import { runTaskLoop } from "./orchestrator/loop.js";
 import { dispatchAutomationTask } from "./orchestrator/automation-lifecycle.js";
 import { AutomationExecutor } from "./adapters/automation-executor.js";
-import { createWebhookReceiptStoreFromEnv } from "./db/webhook-receipts.js";
+import {
+  createWebhookReceiptStoreFromEnv,
+  PostgresWebhookReceiptStore,
+} from "./db/webhook-receipts.js";
+import { createDispatchStateStoreFromEnv } from "./db/dispatch-state.js";
+import {
+  assertProductionPersistenceConfig,
+  resolvePersistenceTier,
+} from "./config/production-guards.js";
 import { createNadsIngressServer, listenNadsIngress } from "./ingress/http-server.js";
 
 function redactSecrets(value: unknown): unknown {
@@ -529,19 +537,47 @@ async function ingressServe(): Promise<void> {
     return;
   }
 
+  let persistence;
+  try {
+    persistence = assertProductionPersistenceConfig(process.env);
+  } catch (error: unknown) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: error instanceof Error ? error.message : "persistence_config_invalid",
+      }),
+    );
+    process.exitCode = 2;
+    return;
+  }
+
   const store = new MemoryStore();
   const github = createGitHubAdapterFromEnv();
   const reviewer = createReviewerFromEnv();
   const receipts = createWebhookReceiptStoreFromEnv();
+  const dispatchState = createDispatchStateStoreFromEnv();
   const server = createNadsIngressServer({
     store,
     github,
     reviewer,
     receipts,
+    dispatchState,
     githubWebhookSecret: githubSecret,
     automationCallbackSecret: process.env.NADS_AUTOMATION_CALLBACK_SECRET,
     maxBodyBytes: Number(process.env.NADS_INGRESS_MAX_BODY_BYTES ?? 1_048_576),
-    readyCheck: () => true,
+    rateLimitPerWindow: Number(process.env.NADS_INGRESS_RATE_LIMIT ?? 120),
+    rateLimitWindowMs: Number(process.env.NADS_INGRESS_RATE_WINDOW_MS ?? 60_000),
+    readyCheck: async () => {
+      if (receipts instanceof PostgresWebhookReceiptStore) {
+        try {
+          await receipts.ping();
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    },
   });
 
   const host = process.env.NADS_INGRESS_HOST ?? "127.0.0.1";
@@ -553,8 +589,45 @@ async function ingressServe(): Promise<void> {
       listening: `http://${bound.host}:${bound.port}`,
       routes: ["/health", "/ready", "/webhooks/github", "/webhooks/automation-callback"],
       automationSendEnabled: false,
+      persistence,
       note: "Receive-only ingress. NADS_AUTOMATION_ENABLED remains independent and defaults false.",
     }),
+  );
+}
+
+async function readinessStatus(): Promise<void> {
+  const tiers = resolvePersistenceTier(process.env);
+  let productionGuard: { ok: boolean; error?: string } = { ok: true };
+  try {
+    assertProductionPersistenceConfig(process.env);
+  } catch (error: unknown) {
+    productionGuard = {
+      ok: false,
+      error: error instanceof Error ? error.message : "guard_failed",
+    };
+  }
+  console.log(
+    JSON.stringify(
+      {
+        ok: productionGuard.ok || !((process.env.NADS_PRODUCTION ?? "").toLowerCase() === "true"),
+        NADS_EXECUTOR: process.env.NADS_EXECUTOR ?? "mock",
+        NADS_AUTOMATION_ENABLED: (process.env.NADS_AUTOMATION_ENABLED ?? "false").toLowerCase() === "true",
+        NADS_INGRESS_ENABLED: (process.env.NADS_INGRESS_ENABLED ?? "false").toLowerCase() === "true",
+        NADS_ALLOW_CURSOR_API_SMOKE:
+          (process.env.NADS_ALLOW_CURSOR_API_SMOKE ?? "false").toLowerCase() === "true",
+        persistence: tiers,
+        productionGuard,
+        redisRequired: false,
+        redisNote: "REDIS_URL is optional placeholder — NADS Automation path does not require Redis",
+        gates: {
+          automationSend: "keep false until controlled staging activation",
+          ingress: "keep false until HTTPS + secrets configured",
+          cursorApi: "never auto-fallback; smoke opt-in only",
+        },
+      },
+      null,
+      2,
+    ),
   );
 }
 
@@ -568,6 +641,7 @@ const runners: Record<string, () => Promise<void>> = {
   "provider-mode": showProviderMode,
   "executor-status": showExecutorStatus,
   "automation-dispatch-dry": automationDispatchDry,
+  "readiness-status": readinessStatus,
   "ingress-serve": ingressServe,
   "cursor-smoke": cursorSmoke,
 };
@@ -575,7 +649,7 @@ const runners: Record<string, () => Promise<void>> = {
 const run = runners[command];
 if (!run) {
   console.error(
-    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | ingress-serve | cursor-smoke`,
+    `Unknown command: ${command}. Use: dry-run | review-smoke | github-status | reviewer-mode | provider-mode | executor-status | automation-dispatch-dry | readiness-status | ingress-serve | cursor-smoke`,
   );
   process.exit(1);
 }

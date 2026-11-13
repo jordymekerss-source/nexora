@@ -1,0 +1,45 @@
+# Example reverse-proxy config for NADS ingress.
+# Terminate TLS here. Forward raw body (no buffering transforms that break HMAC).
+#
+# Rate limiting is enforced at the proxy AND optionally in-process
+# (NADS_INGRESS_RATE_LIMIT). Prefer proxy limits in multi-instance production.
+
+limit_req_zone $binary_remote_addr zone=nads_webhooks:10m rate=5r/s;
+
+upstream nads_ingress {
+  server 127.0.0.1:8787;
+  keepalive 16;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name nads.example.com;
+
+  # ssl_certificate /path/to/fullchain.pem;
+  # ssl_certificate_key /path/to/privkey.pem;
+
+  client_max_body_size 1m;
+
+  location /health {
+    proxy_pass http://nads_ingress;
+  }
+
+  location /ready {
+    proxy_pass http://nads_ingress;
+  }
+
+  location /webhooks/ {
+    limit_req zone=nads_webhooks burst=20 nodelay;
+
+    # Critical: preserve exact request body for GitHub HMAC verification.
+    proxy_request_buffering on;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Content-Type $content_type;
+
+    proxy_pass http://nads_ingress;
+  }
+}

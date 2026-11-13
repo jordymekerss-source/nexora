@@ -178,9 +178,12 @@ describe("P0.7.4 safe Automation POST retry policy", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
     const token = store.tasks[0]!.dispatchReconcileToken!;
-    expect(reconcileUncertainDispatch(store, task.id, "bad-token").ok).toBe(false);
-    expect(reconcileUncertainDispatch(store, task.id, token).ok).toBe(true);
+    expect((await reconcileUncertainDispatch(store, task.id, "bad-token")).ok).toBe(false);
+    const reconciled = await reconcileUncertainDispatch(store, task.id, token);
+    expect(reconciled.ok).toBe(true);
     expect(store.tasks[0]?.dispatchUncertain).toBe(false);
+    // Reconcile must not auto-submit another Automation POST.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("classifies pre-accept network errors", () => {
