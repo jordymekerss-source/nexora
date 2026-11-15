@@ -29,6 +29,8 @@ export {
   buildGitHubReviewEvidence,
   formatGitHubEvidenceForReviewer,
   testSummaryFromChecks,
+  classifyCheckConclusion,
+  checksAllSucceeded,
 } from "./review/evidence.js";
 export {
   buildRemediationOrder,
@@ -63,6 +65,7 @@ export {
 } from "./db/dispatch-state.js";
 export {
   assertProductionPersistenceConfig,
+  assertLiveAutomationSendConfig,
   resolvePersistenceTier,
   isProductionLike,
 } from "./config/production-guards.js";

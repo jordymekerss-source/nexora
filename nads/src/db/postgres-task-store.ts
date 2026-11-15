@@ -132,71 +132,81 @@ export class PostgresTaskRepository {
   }
 
   async persistTaskSnapshot(task: DevelopmentTask): Promise<void> {
-    await this.pool.query(
-      `update development_tasks set
-         status = $2,
-         retry_count = $3,
-         assigned_agent_id = $4,
-         executor_kind = $5,
-         external_execution_id = $6,
-         pr_number = $7,
-         pr_url = $8,
-         head_branch = $9,
-         dispatch_idempotency_key = $10,
-         expected_repo_url = $11,
-         expected_starting_ref = $12,
-         expected_branch_prefix = $13,
-         expected_task_marker = $14,
-         dispatch_outcome = $15,
-         dispatch_uncertain = coalesce($16, false),
-         dispatch_reconcile_token = $17,
-         updated_at = now(),
-         completed_at = case when $2 in ('ACCEPTED', 'NEXT_TASK', 'STOPPED', 'BLOCKED')
-           then coalesce(completed_at, now()) else completed_at end
-       where id = $1::uuid`,
-      [
-        task.id,
-        task.status,
-        task.retryCount,
-        task.assignedAgentId ?? null,
-        task.executorKind ?? null,
-        task.externalExecutionId ?? null,
-        task.prNumber ?? null,
-        task.prUrl ?? null,
-        task.headBranch ?? null,
-        task.dispatchIdempotencyKey ?? null,
-        task.expectedRepoUrl ?? null,
-        task.expectedStartingRef ?? null,
-        task.expectedBranchPrefix ?? null,
-        task.expectedTaskMarker ?? null,
-        task.dispatchOutcome ?? null,
-        task.dispatchUncertain ?? false,
-        task.dispatchReconcileToken ?? null,
-      ],
-    );
-
-    // Persist remediation snapshot via existing development_events (no new migration).
-    if (task.lastRemediationOrder || task.lastRejectionSummary || task.lastReviewedHeadSha) {
-      const idempotencyKey = `remediation:${task.id}:${task.lastReviewedHeadSha ?? "none"}:${task.retryCount}`;
-      await this.pool.query(
-        `insert into development_events (project_id, task_id, event_type, payload, idempotency_key)
-         values ($1::uuid, $2::uuid, 'task.remediation_snapshot', $3::jsonb, $4)
-         on conflict (project_id, idempotency_key) do update
-           set payload = excluded.payload`,
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `update development_tasks set
+           status = $2,
+           retry_count = $3,
+           assigned_agent_id = $4,
+           executor_kind = $5,
+           external_execution_id = $6,
+           pr_number = $7,
+           pr_url = $8,
+           head_branch = $9,
+           dispatch_idempotency_key = $10,
+           expected_repo_url = $11,
+           expected_starting_ref = $12,
+           expected_branch_prefix = $13,
+           expected_task_marker = $14,
+           dispatch_outcome = $15,
+           dispatch_uncertain = coalesce($16, false),
+           dispatch_reconcile_token = $17,
+           updated_at = now(),
+           completed_at = case when $2 in ('ACCEPTED', 'NEXT_TASK', 'STOPPED', 'BLOCKED')
+             then coalesce(completed_at, now()) else completed_at end
+         where id = $1::uuid`,
         [
-          task.projectId,
           task.id,
-          JSON.stringify({
-            lastRejectionSummary: task.lastRejectionSummary ?? null,
-            lastRequiredChanges: task.lastRequiredChanges ?? [],
-            lastRemediationOrder: task.lastRemediationOrder ?? null,
-            lastReviewedHeadSha: task.lastReviewedHeadSha ?? null,
-            status: task.status,
-            retryCount: task.retryCount,
-          }),
-          idempotencyKey,
+          task.status,
+          task.retryCount,
+          task.assignedAgentId ?? null,
+          task.executorKind ?? null,
+          task.externalExecutionId ?? null,
+          task.prNumber ?? null,
+          task.prUrl ?? null,
+          task.headBranch ?? null,
+          task.dispatchIdempotencyKey ?? null,
+          task.expectedRepoUrl ?? null,
+          task.expectedStartingRef ?? null,
+          task.expectedBranchPrefix ?? null,
+          task.expectedTaskMarker ?? null,
+          task.dispatchOutcome ?? null,
+          task.dispatchUncertain ?? false,
+          task.dispatchReconcileToken ?? null,
         ],
       );
+
+      // Persist remediation snapshot via existing development_events (no new migration).
+      if (task.lastRemediationOrder || task.lastRejectionSummary || task.lastReviewedHeadSha) {
+        const idempotencyKey = `remediation:${task.id}:${task.lastReviewedHeadSha ?? "none"}:${task.retryCount}`;
+        await client.query(
+          `insert into development_events (project_id, task_id, event_type, payload, idempotency_key)
+           values ($1::uuid, $2::uuid, 'task.remediation_snapshot', $3::jsonb, $4)
+           on conflict (project_id, idempotency_key) do update
+             set payload = excluded.payload`,
+          [
+            task.projectId,
+            task.id,
+            JSON.stringify({
+              lastRejectionSummary: task.lastRejectionSummary ?? null,
+              lastRequiredChanges: task.lastRequiredChanges ?? [],
+              lastRemediationOrder: task.lastRemediationOrder ?? null,
+              lastReviewedHeadSha: task.lastReviewedHeadSha ?? null,
+              status: task.status,
+              retryCount: task.retryCount,
+            }),
+            idempotencyKey,
+          ],
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
     }
   }
 

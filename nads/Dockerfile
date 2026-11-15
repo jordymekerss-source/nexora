@@ -12,10 +12,12 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     NADS_PRODUCTION=true \
+    NADS_MODE=live \
     NADS_EXECUTOR=automation \
     NADS_AUTOMATION_ENABLED=false \
     NADS_INGRESS_ENABLED=false \
     NADS_ALLOW_CURSOR_API_SMOKE=false \
+    NADS_ALLOW_HEURISTIC_REVIEWER=false \
     NADS_WEBHOOK_RECEIPT_STORE=postgres \
     NADS_DISPATCH_STATE_STORE=postgres \
     NADS_REQUIRE_PG_RECEIPTS=true \

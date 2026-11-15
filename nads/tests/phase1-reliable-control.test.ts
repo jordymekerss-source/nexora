@@ -176,6 +176,24 @@ describe("phase1: incomplete / unreliable evidence", () => {
     );
   });
 
+  it("does not treat skipped CI as successful verification", () => {
+    const evidence = buildGitHubReviewEvidence({
+      owner: "o",
+      repo: "r",
+      prNumber: 1,
+      headSha: "h".repeat(40),
+      baseSha: "b".repeat(40),
+      files: completeEvidenceFiles(),
+      checks: [
+        { name: "npm test", conclusion: "skipped" },
+        { name: "typecheck", conclusion: "success" },
+      ],
+      acceptanceCriteria: ["a"],
+    });
+    expect(evidence.complete).toBe(false);
+    expect(evidence.incompleteReasons).toContain("ci_checks_skipped");
+  });
+
   it("REJECT builds deterministic remediation order with paths and tests", () => {
     const review = CodeReviewResultSchema.parse({
       decision: "REJECT",

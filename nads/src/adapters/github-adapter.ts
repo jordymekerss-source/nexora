@@ -341,8 +341,18 @@ export class HttpGitHubAdapter implements GitHubAdapter {
       errors.push(`branch_missing:${branchName}`);
     }
 
-    const checks =
-      pr?.headSha != null ? await this.getCheckConclusions(pr.headSha).catch(() => []) : [];
+    let checks: CheckConclusion[] = [];
+    if (pr?.headSha != null) {
+      try {
+        checks = await this.getCheckConclusions(pr.headSha);
+      } catch (error: unknown) {
+        errors.push(
+          error instanceof Error
+            ? `checks_retrieval_failed:${error.message.slice(0, 160)}`
+            : "checks_retrieval_failed",
+        );
+      }
+    }
 
     const notMerged = Boolean(pr && !pr.merged && pr.state === "open");
     const markerPresent = markerInBody;

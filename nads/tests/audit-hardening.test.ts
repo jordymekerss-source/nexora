@@ -134,8 +134,8 @@ describe("audit hardening: in-process replay 409", () => {
   });
 });
 
-describe("audit hardening: one-shot without single-task mode", () => {
-  it("still consumes one-shot gate when NADS_SINGLE_TASK_MODE is false", async () => {
+describe("audit hardening: live send config cannot bypass single-task / one-shot", () => {
+  it("refuses live send when NADS_SINGLE_TASK_MODE is false", async () => {
     const store = new MemoryStore();
     const task = store.seedTask({ title: "send", acceptanceCriteria: ["a"] });
     const gate = new MemoryOneShotDispatchGate();
@@ -151,18 +151,59 @@ describe("audit hardening: one-shot without single-task mode", () => {
       enabled: true,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
-    const first = await dispatchAutomationTask({
+    const outcome = await dispatchAutomationTask({
       store,
       executor: wrapExecutor(inner),
       taskId: task.id,
       repoUrl: "https://github.com/jordymekerss-source/nexora",
+      startingRef: "main",
       oneShotGate: gate,
       singleTaskEnv: {
         NADS_SINGLE_TASK_MODE: "false",
         NADS_AUTOMATION_ENABLED: "true",
         NADS_AUTOMATION_WEBHOOK_URL: "https://example.test/hook",
         NADS_AUTOMATION_WEBHOOK_KEY: "secret",
+        NADS_CURSOR_STARTING_REF: "main",
       },
+    });
+    expect(outcome.sent).toBe(false);
+    expect(outcome.status).toBe("send_config_refused");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect((await gate.get())?.status).toBe("armed");
+  });
+
+  it("consumes one-shot gate once when single-task + approved id are set", async () => {
+    const store = new MemoryStore();
+    const task = store.seedTask({ title: "send", acceptanceCriteria: ["a"] });
+    const gate = new MemoryOneShotDispatchGate();
+    await gate.arm(task.id);
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ id: "run-1" }),
+    });
+    const inner = new AutomationExecutor({
+      webhookUrl: "https://example.test/hook",
+      webhookKey: "secret",
+      enabled: true,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const env = {
+      NADS_SINGLE_TASK_MODE: "true",
+      NADS_APPROVED_TASK_ID: task.id,
+      NADS_AUTOMATION_ENABLED: "true",
+      NADS_AUTOMATION_WEBHOOK_URL: "https://example.test/hook",
+      NADS_AUTOMATION_WEBHOOK_KEY: "secret",
+      NADS_CURSOR_STARTING_REF: "main",
+    };
+    const first = await dispatchAutomationTask({
+      store,
+      executor: wrapExecutor(inner),
+      taskId: task.id,
+      repoUrl: "https://github.com/jordymekerss-source/nexora",
+      startingRef: "main",
+      oneShotGate: gate,
+      singleTaskEnv: env,
     });
     expect(first.sent).toBe(true);
     expect((await gate.get())?.status).toBe("consumed");
@@ -176,17 +217,44 @@ describe("audit hardening: one-shot without single-task mode", () => {
       executor: wrapExecutor(inner),
       taskId: task.id,
       repoUrl: "https://github.com/jordymekerss-source/nexora",
+      startingRef: "main",
+      oneShotGate: gate,
+      singleTaskEnv: env,
+    });
+    expect(second.sent).toBe(false);
+    expect(second.status).toBe("one_shot_already_consumed");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses live send without explicit starting ref", async () => {
+    const store = new MemoryStore();
+    const task = store.seedTask({ title: "send", acceptanceCriteria: ["a"] });
+    const gate = new MemoryOneShotDispatchGate();
+    await gate.arm(task.id);
+    const fetchImpl = vi.fn();
+    const inner = new AutomationExecutor({
+      webhookUrl: "https://example.test/hook",
+      webhookKey: "secret",
+      enabled: true,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const outcome = await dispatchAutomationTask({
+      store,
+      executor: wrapExecutor(inner),
+      taskId: task.id,
+      repoUrl: "https://github.com/jordymekerss-source/nexora",
       oneShotGate: gate,
       singleTaskEnv: {
-        NADS_SINGLE_TASK_MODE: "false",
+        NADS_SINGLE_TASK_MODE: "true",
+        NADS_APPROVED_TASK_ID: task.id,
         NADS_AUTOMATION_ENABLED: "true",
         NADS_AUTOMATION_WEBHOOK_URL: "https://example.test/hook",
         NADS_AUTOMATION_WEBHOOK_KEY: "secret",
       },
     });
-    expect(second.sent).toBe(false);
-    expect(second.status).toBe("one_shot_already_consumed");
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(outcome.sent).toBe(false);
+    expect(outcome.status).toBe("missing_starting_ref");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

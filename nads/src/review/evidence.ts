@@ -18,6 +18,14 @@ export type ReviewCheckEvidence = {
   conclusion: string | null;
 };
 
+/** Explicit CI outcome kinds — skipped/pending/missing are never "success". */
+export type CheckOutcomeKind =
+  | "success"
+  | "skipped"
+  | "pending"
+  | "failure"
+  | "missing";
+
 export type GitHubReviewEvidence = {
   repository: string;
   prNumber: number | null;
@@ -46,6 +54,29 @@ export type BuildEvidenceOptions = {
   maxFiles?: number;
   maxPatchPerFile?: number;
 };
+
+/**
+ * Classify a GitHub check-run conclusion.
+ * Unknown values fail closed as "failure". Null/empty = pending.
+ */
+export function classifyCheckConclusion(
+  conclusion: string | null | undefined,
+): CheckOutcomeKind {
+  if (conclusion == null || conclusion.trim() === "") return "pending";
+  const normalized = conclusion.trim().toLowerCase();
+  if (normalized === "success") return "success";
+  if (normalized === "skipped" || normalized === "neutral") return "skipped";
+  if (
+    normalized === "failure" ||
+    normalized === "cancelled" ||
+    normalized === "timed_out" ||
+    normalized === "action_required" ||
+    normalized === "stale"
+  ) {
+    return "failure";
+  }
+  return "failure";
+}
 
 /**
  * Build a bounded, auditable evidence package from GitHub PR metadata.
@@ -167,14 +198,27 @@ export function buildGitHubReviewEvidence(input: {
   if (checks.length === 0) {
     incompleteReasons.push("missing_ci_checks");
   } else {
-    const pending = checks.filter((check) => check.conclusion == null);
-    const failed = checks.filter(
-      (check) => check.conclusion && check.conclusion !== "success" && check.conclusion !== "skipped",
-    );
+    const outcomes = checks.map((check) => ({
+      name: check.name,
+      kind: classifyCheckConclusion(check.conclusion),
+    }));
+    const pending = outcomes.filter((row) => row.kind === "pending");
+    const skipped = outcomes.filter((row) => row.kind === "skipped");
+    const failed = outcomes.filter((row) => row.kind === "failure");
+    const succeeded = outcomes.filter((row) => row.kind === "success");
+
     if (pending.length > 0) incompleteReasons.push("ci_checks_pending");
+    if (skipped.length > 0) {
+      // Skipped is not success — block ACCEPT completeness.
+      incompleteReasons.push("ci_checks_skipped");
+      limitations.push(`skipped_checks:${skipped.map((row) => row.name).join(",")}`);
+    }
+    if (succeeded.length === 0) {
+      incompleteReasons.push("ci_checks_no_success");
+    }
     if (failed.length > 0) {
       // Failed checks are valid evidence for REJECT, not incompleteness for review itself.
-      limitations.push(`failed_checks:${failed.map((check) => check.name).join(",")}`);
+      limitations.push(`failed_checks:${failed.map((row) => row.name).join(",")}`);
     }
   }
 
@@ -220,10 +264,11 @@ export function formatGitHubEvidenceForReviewer(evidence: GitHubReviewEvidence):
   }
   lines.push("", "## CI checks");
   if (evidence.checks.length === 0) {
-    lines.push("(none)");
+    lines.push("(none — missing)");
   } else {
     for (const check of evidence.checks) {
-      lines.push(`- ${check.name}: ${check.conclusion ?? "pending"}`);
+      const kind = classifyCheckConclusion(check.conclusion);
+      lines.push(`- ${check.name}: ${check.conclusion ?? "pending"} [${kind}]`);
     }
   }
   lines.push("", "## Changed files and patches");
@@ -245,26 +290,50 @@ export function formatGitHubEvidenceForReviewer(evidence: GitHubReviewEvidence):
 
 /**
  * Test summary derived only from GitHub check conclusions — never from Cursor claims.
+ * Exit codes: success=0; skipped/pending/failure/missing=non-zero (never treat skipped as pass).
  */
 export function testSummaryFromChecks(checks: ReviewCheckEvidence[]): {
   commands: string[];
   exitCodes: number[];
   notes: string;
+  outcomes: Array<{ name: string; kind: CheckOutcomeKind }>;
 } {
-  const commands = checks.map((check) => check.name);
-  const exitCodes = checks.map((check) => {
-    if (check.conclusion === "success" || check.conclusion === "skipped") return 0;
-    if (check.conclusion == null) return 1;
-    return 1;
+  const outcomes = checks.map((check) => ({
+    name: check.name,
+    kind: classifyCheckConclusion(check.conclusion),
+  }));
+  const commands = outcomes.map((row) => row.name);
+  const exitCodes = outcomes.map((row) => {
+    switch (row.kind) {
+      case "success":
+        return 0;
+      case "skipped":
+        return 2;
+      case "pending":
+        return 3;
+      case "failure":
+        return 1;
+      case "missing":
+        return 4;
+      default:
+        return 1;
+    }
   });
-  const failed = checks.filter(
-    (check) => check.conclusion && check.conclusion !== "success" && check.conclusion !== "skipped",
-  );
-  const pending = checks.filter((check) => check.conclusion == null);
+  const byKind = (kind: CheckOutcomeKind) =>
+    outcomes.filter((row) => row.kind === kind).map((row) => row.name);
   const notes = [
     "Derived from GitHub check-runs only (Cursor output is untrusted).",
-    failed.length ? `Failed: ${failed.map((check) => check.name).join(", ")}` : "No failed checks.",
-    pending.length ? `Pending: ${pending.map((check) => check.name).join(", ")}` : "No pending checks.",
+    `success=${byKind("success").join(",") || "none"}`,
+    `skipped=${byKind("skipped").join(",") || "none"}`,
+    `pending=${byKind("pending").join(",") || "none"}`,
+    `failure=${byKind("failure").join(",") || "none"}`,
+    checks.length === 0 ? "missing=all_checks_absent" : "missing=none",
   ].join(" ");
-  return { commands, exitCodes, notes };
+  return { commands, exitCodes, notes, outcomes };
+}
+
+/** True when every recorded check is a real success (no skipped/pending/failure/empty). */
+export function checksAllSucceeded(checks: ReviewCheckEvidence[]): boolean {
+  if (checks.length === 0) return false;
+  return checks.every((check) => classifyCheckConclusion(check.conclusion) === "success");
 }

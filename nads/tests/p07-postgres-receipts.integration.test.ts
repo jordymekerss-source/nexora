@@ -13,12 +13,13 @@ import {
 const DATABASE_URL =
   process.env.NADS_PG_INTEGRATION_URL?.trim() ||
   process.env.DATABASE_URL?.trim() ||
-  "postgresql://nads:nads@127.0.0.1:5432/nads_test";
+  "postgresql://nads:nads@127.0.0.1:55432/nads_test";
 
-const runPg = (process.env.NADS_PG_INTEGRATION ?? "1").toLowerCase() !== "0";
+/** Opt-in only — never assume a local Postgres is available. */
+const runPg = (process.env.NADS_PG_INTEGRATION ?? "0").toLowerCase() !== "0";
 
 describe.skipIf(!runPg)("P0.7.2 PostgreSQL WebhookReceiptStore integration", () => {
-  let store: PostgresWebhookReceiptStore;
+  let store: PostgresWebhookReceiptStore | undefined;
   let projectId: string;
   let taskId: string;
 
@@ -29,10 +30,11 @@ describe.skipIf(!runPg)("P0.7.2 PostgreSQL WebhookReceiptStore integration", () 
   }, 60_000);
 
   afterAll(async () => {
-    await store.close();
+    await store?.close();
   });
 
   beforeEach(async () => {
+    if (!store) throw new Error("store not initialized");
     await resetNadsTables(DATABASE_URL);
     projectId = randomUUID();
     taskId = randomUUID();

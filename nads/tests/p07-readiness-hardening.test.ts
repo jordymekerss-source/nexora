@@ -422,11 +422,12 @@ describe("Production persistence fail-closed", () => {
 const DATABASE_URL =
   process.env.NADS_PG_INTEGRATION_URL?.trim() ||
   process.env.DATABASE_URL?.trim() ||
-  "postgresql://nads:nads@127.0.0.1:5432/nads_test";
-const runPg = (process.env.NADS_PG_INTEGRATION ?? "1").toLowerCase() !== "0";
+  "postgresql://nads:nads@127.0.0.1:55432/nads_test";
+/** Opt-in only — never assume a local Postgres is available. */
+const runPg = (process.env.NADS_PG_INTEGRATION ?? "0").toLowerCase() !== "0";
 
 describe.skipIf(!runPg)("P0.7.4 uncertain dispatch Postgres restart persistence", () => {
-  let pgStore: PostgresDispatchStateStore;
+  let pgStore: PostgresDispatchStateStore | undefined;
   let projectId: string;
   let taskId: string;
 
@@ -436,10 +437,11 @@ describe.skipIf(!runPg)("P0.7.4 uncertain dispatch Postgres restart persistence"
   }, 60_000);
 
   afterAll(async () => {
-    await pgStore.close();
+    await pgStore?.close();
   });
 
   it("persists uncertain flag across store instances", async () => {
+    if (!pgStore) throw new Error("pgStore not initialized");
     await resetNadsTables(DATABASE_URL);
     projectId = randomUUID();
     taskId = randomUUID();

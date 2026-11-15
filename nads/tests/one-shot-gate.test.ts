@@ -43,6 +43,7 @@ function liveEnv(taskId: string) {
     NADS_AUTOMATION_ENABLED: "true",
     NADS_AUTOMATION_WEBHOOK_URL: "https://example.test/hook",
     NADS_AUTOMATION_WEBHOOK_KEY: "secret",
+    NADS_CURSOR_STARTING_REF: "main",
   };
 }
 

@@ -74,6 +74,12 @@ export function assertProductionPersistenceConfig(
   const tiers = resolvePersistenceTier(env);
   if (!isProductionLike(env)) return tiers;
 
+  if ((env.NADS_ALLOW_HEURISTIC_REVIEWER ?? "").toLowerCase() === "true") {
+    throw new Error(
+      "NADS_ALLOW_HEURISTIC_REVIEWER is forbidden in production-like mode — refusing Heuristic ACCEPT path",
+    );
+  }
+
   if (tiers.receipts !== "postgres") {
     throw new Error(
       "Production/multi-instance NADS requires NADS_WEBHOOK_RECEIPT_STORE=postgres and DATABASE_URL — refusing memory/file",
@@ -97,16 +103,38 @@ export function assertProductionPersistenceConfig(
 
   // Live Automation send: require single-task mode + postgres one-shot gate (fail closed).
   if ((env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() === "true") {
-    if ((env.NADS_SINGLE_TASK_MODE ?? "false").toLowerCase() !== "true") {
-      throw new Error(
-        "NADS_AUTOMATION_ENABLED=true requires NADS_SINGLE_TASK_MODE=true — refusing unbounded send",
-      );
-    }
-    if (!env.NADS_APPROVED_TASK_ID?.trim()) {
-      throw new Error(
-        "NADS_AUTOMATION_ENABLED=true requires NADS_APPROVED_TASK_ID — refusing unbounded send",
-      );
-    }
+    assertLiveAutomationSendConfig(env);
+  }
+
+  return tiers;
+}
+
+/**
+ * Fail-closed send authorization for any live Automation network POST.
+ * Always required when NADS_AUTOMATION_ENABLED=true (not only production-like),
+ * so miscombined env vars cannot bypass one-shot / single-task controls.
+ */
+export function assertLiveAutomationSendConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if ((env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() !== "true") return;
+
+  if ((env.NADS_ALLOW_HEURISTIC_REVIEWER ?? "").toLowerCase() === "true") {
+    throw new Error(
+      "NADS_ALLOW_HEURISTIC_REVIEWER cannot be combined with NADS_AUTOMATION_ENABLED=true",
+    );
+  }
+  if ((env.NADS_SINGLE_TASK_MODE ?? "false").toLowerCase() !== "true") {
+    throw new Error(
+      "NADS_AUTOMATION_ENABLED=true requires NADS_SINGLE_TASK_MODE=true — refusing unbounded send",
+    );
+  }
+  if (!env.NADS_APPROVED_TASK_ID?.trim()) {
+    throw new Error(
+      "NADS_AUTOMATION_ENABLED=true requires NADS_APPROVED_TASK_ID — refusing unbounded send",
+    );
+  }
+  if (isProductionLike(env)) {
     const gateStore = (
       env.NADS_ONE_SHOT_GATE_STORE ??
       env.NADS_WEBHOOK_RECEIPT_STORE ??
@@ -120,6 +148,4 @@ export function assertProductionPersistenceConfig(
       );
     }
   }
-
-  return tiers;
 }

@@ -41,6 +41,7 @@ import {
 import { buildRemediationOrder } from "../review/remediation-order.js";
 import type { CodeReviewResult } from "../review/schema.js";
 import type { PullRequestDetail, PullRequestFile, CheckConclusion } from "../adapters/github-adapter.js";
+import { assertLiveAutomationSendConfig } from "../config/production-guards.js";
 
 /** Optional Postgres hydration hooks used by ingress HydratingMemoryStore. */
 type HydratableTaskStore = MemoryStore & {
@@ -282,7 +283,42 @@ export async function dispatchAutomationTask(options: {
     throw new Error(`Cannot dispatch automation from status ${task.status}`);
   }
 
-  const startingRef = options.startingRef ?? "main";
+  const env = options.singleTaskEnv ?? process.env;
+  const willAttemptNetworkSend =
+    executor.kind === "automation" &&
+    (env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() === "true" &&
+    Boolean(env.NADS_AUTOMATION_WEBHOOK_URL?.trim() && env.NADS_AUTOMATION_WEBHOOK_KEY?.trim());
+
+  // Live network send: never fall back to a blind "main" — require explicit starting ref.
+  const explicitStartingRef =
+    options.startingRef?.trim() || env.NADS_CURSOR_STARTING_REF?.trim() || "";
+  if (willAttemptNetworkSend && !explicitStartingRef) {
+    return {
+      taskId: task.id,
+      sent: false,
+      status: "missing_starting_ref",
+      idempotencyKey: task.dispatchIdempotencyKey ?? `dispatch:${task.id}:blocked`,
+      error:
+        "Live Automation send requires startingRef option or NADS_CURSOR_STARTING_REF — refusing blind main default",
+    };
+  }
+  const startingRef = explicitStartingRef || "main";
+
+  if (willAttemptNetworkSend) {
+    try {
+      assertLiveAutomationSendConfig(env);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "send_config_refused";
+      return {
+        taskId: task.id,
+        sent: false,
+        status: "send_config_refused",
+        idempotencyKey: task.dispatchIdempotencyKey ?? `dispatch:${task.id}:blocked`,
+        error: message,
+      };
+    }
+  }
+
   const priorRejection =
     options.priorRejection ?? task.lastRejectionSummary ?? task.lastRemediationOrder ?? null;
   const requiredChanges =
@@ -323,14 +359,7 @@ export async function dispatchAutomationTask(options: {
     };
   }
 
-  // One-shot gate: consume atomic authorization for any live Automation POST (not only single-task mode).
-  // NADS_SINGLE_TASK_MODE remains an additional approved-task filter above; the gate always applies on send.
-  const env = options.singleTaskEnv ?? process.env;
-  const willAttemptNetworkSend =
-    executor.kind === "automation" &&
-    (env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() === "true" &&
-    Boolean(env.NADS_AUTOMATION_WEBHOOK_URL?.trim() && env.NADS_AUTOMATION_WEBHOOK_KEY?.trim());
-
+  // One-shot gate: consume atomic authorization for any live Automation POST.
   if (willAttemptNetworkSend) {
     const gate = options.oneShotGate ?? createOneShotDispatchGateFromEnv(env);
     const consumed = await gate.tryConsume({
@@ -644,6 +673,11 @@ async function runReviewAndTransition(options: {
     githubEvidence: options.githubEvidence ?? null,
   });
 
+  // Stamp reviewed head only after the review completes (not during evidence fetch).
+  if (options.githubEvidence?.headSha) {
+    task.lastReviewedHeadSha = options.githubEvidence.headSha;
+  }
+
   if (review.decision === "REJECT") {
     applyRemediationFromReject(task, review, options.githubEvidence ?? null);
   }
@@ -856,17 +890,34 @@ export async function completeAutomationTaskFromGitHub(options: {
           prUrl: pr.url,
         };
       }
+      // Re-read head after checks to detect pushes during evidence collection (TOCTOU).
+      let headAtReview = pr.headSha;
+      try {
+        const refreshed = await options.github.getPullRequest(prNumber);
+        if (refreshed.headSha !== pr.headSha) {
+          await release("head_sha_changed_during_evidence");
+          return {
+            taskId: task.id,
+            handled: false,
+            reason: "head_sha_changed_during_evidence",
+            prNumber,
+            prUrl: pr.url,
+          };
+        }
+        headAtReview = refreshed.headSha;
+      } catch {
+        // If refresh fails, continue with original head but mark incomplete later via evidence.
+      }
       githubEvidence = await gatherPullRequestEvidence({
         github: options.github,
         task,
-        pr,
+        pr: { ...pr, headSha: headAtReview },
         files,
         checks,
       });
       task.prNumber = pr.number;
       task.prUrl = pr.url;
       task.headBranch = pr.headRef;
-      task.lastReviewedHeadSha = pr.headSha;
       await options.journal?.upsert({
         taskId: task.id,
         agentId: task.assignedAgentId ?? task.externalExecutionId,
