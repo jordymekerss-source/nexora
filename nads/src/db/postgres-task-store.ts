@@ -1,6 +1,7 @@
 /**
  * Postgres-backed task/project hydration for ingress-serve.
  * Aligns MemoryStore.projectId with development_projects so receipt FKs succeed.
+ * Status writes use optimistic concurrency (row_version CAS) — never silent lost updates.
  */
 import pg from "pg";
 import type { Pool } from "pg";
@@ -9,11 +10,51 @@ import { MemoryStore, type DevelopmentTask } from "./memory-store.js";
 import type { WebhookReceiptStore } from "./webhook-receipts.js";
 import { resolveDatabaseUrlFromEnv } from "../config/database-url.js";
 
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set([
+  "ACCEPTED",
+  "NEXT_TASK",
+  "BLOCKED",
+  "STOPPED",
+]);
+
 function asTaskStatus(value: string): TaskStatus {
   if ((TASK_STATUSES as readonly string[]).includes(value)) {
     return value as TaskStatus;
   }
   return "READY";
+}
+
+export class TaskConcurrencyConflictError extends Error {
+  readonly code = "task_concurrency_conflict" as const;
+  readonly taskId: string;
+  readonly expectedVersion: number;
+  readonly actualVersion: number | null;
+  readonly actualStatus: TaskStatus | null;
+  readonly reason: string;
+
+  constructor(input: {
+    taskId: string;
+    expectedVersion: number;
+    actualVersion?: number | null;
+    actualStatus?: TaskStatus | null;
+    reason: string;
+  }) {
+    super(
+      `Task concurrency conflict for ${input.taskId}: ${input.reason} (expectedVersion=${input.expectedVersion}, actualVersion=${input.actualVersion ?? "unknown"}, actualStatus=${input.actualStatus ?? "unknown"})`,
+    );
+    this.name = "TaskConcurrencyConflictError";
+    this.taskId = input.taskId;
+    this.expectedVersion = input.expectedVersion;
+    this.actualVersion = input.actualVersion ?? null;
+    this.actualStatus = input.actualStatus ?? null;
+    this.reason = input.reason;
+  }
+}
+
+export function isTaskConcurrencyConflictError(
+  error: unknown,
+): error is TaskConcurrencyConflictError {
+  return error instanceof TaskConcurrencyConflictError;
 }
 
 function mapTaskRow(row: Record<string, unknown>): DevelopmentTask {
@@ -65,6 +106,7 @@ function mapTaskRow(row: Record<string, unknown>): DevelopmentTask {
     dispatchUncertain: Boolean(row.dispatch_uncertain),
     dispatchReconcileToken:
       row.dispatch_reconcile_token == null ? undefined : String(row.dispatch_reconcile_token),
+    rowVersion: Number(row.row_version ?? 0),
   };
 }
 
@@ -73,7 +115,7 @@ const TASK_SELECT = `select id, project_id, title, description, priority, catego
             executor_kind, external_execution_id, pr_number, pr_url, head_branch,
             dispatch_idempotency_key, expected_repo_url, expected_starting_ref,
             expected_branch_prefix, expected_task_marker, dispatch_outcome,
-            dispatch_uncertain, dispatch_reconcile_token
+            dispatch_uncertain, dispatch_reconcile_token, row_version
        from development_tasks`;
 
 export class PostgresTaskRepository {
@@ -131,11 +173,57 @@ export class PostgresTaskRepository {
     return row ? mapTaskRow(row) : null;
   }
 
-  async persistTaskSnapshot(task: DevelopmentTask): Promise<void> {
+  /**
+   * Persist task snapshot with compare-and-swap on row_version.
+   * On conflict throws TaskConcurrencyConflictError — callers must not silently retry
+   * in a way that could re-dispatch Automation.
+   */
+  async persistTaskSnapshot(task: DevelopmentTask): Promise<{ rowVersion: number }> {
+    const expectedVersion = Number(task.rowVersion ?? 0);
     const client = await this.pool.connect();
+    let started = false;
     try {
       await client.query("begin");
-      await client.query(
+      started = true;
+
+      const current = await client.query(
+        `select status, row_version from development_tasks where id = $1::uuid for update`,
+        [task.id],
+      );
+      if (!current.rowCount) {
+        throw new TaskConcurrencyConflictError({
+          taskId: task.id,
+          expectedVersion,
+          reason: "task_not_found",
+        });
+      }
+      const currentRow = current.rows[0] as { status: string; row_version: string | number };
+      const actualVersion = Number(currentRow.row_version ?? 0);
+      const actualStatus = asTaskStatus(String(currentRow.status));
+
+      if (actualVersion !== expectedVersion) {
+        throw new TaskConcurrencyConflictError({
+          taskId: task.id,
+          expectedVersion,
+          actualVersion,
+          actualStatus,
+          reason: "row_version_mismatch",
+        });
+      }
+
+      // Refuse overwriting a terminal DB status with a non-terminal in-memory status
+      // (lost-update / stale-cache protection beyond version CAS).
+      if (TERMINAL_STATUSES.has(actualStatus) && !TERMINAL_STATUSES.has(task.status)) {
+        throw new TaskConcurrencyConflictError({
+          taskId: task.id,
+          expectedVersion,
+          actualVersion,
+          actualStatus,
+          reason: "terminal_status_overwrite_refused",
+        });
+      }
+
+      const updated = await client.query(
         `update development_tasks set
            status = $2,
            retry_count = $3,
@@ -153,10 +241,12 @@ export class PostgresTaskRepository {
            dispatch_outcome = $15,
            dispatch_uncertain = coalesce($16, false),
            dispatch_reconcile_token = $17,
+           row_version = row_version + 1,
            updated_at = now(),
            completed_at = case when $2 in ('ACCEPTED', 'NEXT_TASK', 'STOPPED', 'BLOCKED')
              then coalesce(completed_at, now()) else completed_at end
-         where id = $1::uuid`,
+         where id = $1::uuid and row_version = $18
+         returning row_version`,
         [
           task.id,
           task.status,
@@ -175,10 +265,25 @@ export class PostgresTaskRepository {
           task.dispatchOutcome ?? null,
           task.dispatchUncertain ?? false,
           task.dispatchReconcileToken ?? null,
+          expectedVersion,
         ],
       );
 
-      // Persist remediation snapshot via existing development_events (no new migration).
+      if (!updated.rowCount) {
+        throw new TaskConcurrencyConflictError({
+          taskId: task.id,
+          expectedVersion,
+          actualVersion,
+          actualStatus,
+          reason: "cas_update_lost_race",
+        });
+      }
+
+      const newVersion = Number(
+        (updated.rows[0] as { row_version: string | number }).row_version,
+      );
+
+      // Persist remediation snapshot via existing development_events (no separate migration).
       if (task.lastRemediationOrder || task.lastRejectionSummary || task.lastReviewedHeadSha) {
         const idempotencyKey = `remediation:${task.id}:${task.lastReviewedHeadSha ?? "none"}:${task.retryCount}`;
         await client.query(
@@ -196,14 +301,23 @@ export class PostgresTaskRepository {
               lastReviewedHeadSha: task.lastReviewedHeadSha ?? null,
               status: task.status,
               retryCount: task.retryCount,
+              rowVersion: newVersion,
             }),
             idempotencyKey,
           ],
         );
       }
       await client.query("commit");
+      started = false;
+      return { rowVersion: newVersion };
     } catch (error) {
-      await client.query("rollback");
+      if (started) {
+        try {
+          await client.query("rollback");
+        } catch {
+          // connection may already be aborted
+        }
+      }
       throw error;
     } finally {
       client.release();
@@ -247,8 +361,8 @@ export class PostgresTaskRepository {
 }
 
 /**
- * MemoryStore that lazy-loads tasks from Postgres and writes status snapshots back.
- * projectId must match development_projects.id used by webhook_receipts FK.
+ * MemoryStore that always reloads tasks from Postgres (no sticky stale cache)
+ * and writes status snapshots back with row_version CAS.
  */
 export class HydratingMemoryStore extends MemoryStore {
   constructor(
@@ -259,13 +373,17 @@ export class HydratingMemoryStore extends MemoryStore {
     super(projectId, receipts);
   }
 
-  /** Load task from Postgres into memory if missing; refresh status from DB when absent. */
+  /**
+   * Reload authoritative concurrency fields from Postgres.
+   * Always refreshes status/rowVersion/retry — sticky status cache is unsafe.
+   * Preserves in-memory-only fields (prompt, local bindings not yet flushed) when DB is null.
+   */
   async ensureTask(taskId: string): Promise<DevelopmentTask | null> {
-    const cached = this.tasks.find((row) => row.id === taskId);
-    if (cached) return cached;
-
     const loaded = await this.repository.loadTask(taskId);
-    if (!loaded) return null;
+    if (!loaded) {
+      this.tasks = this.tasks.filter((row) => row.id !== taskId);
+      return null;
+    }
     if (loaded.projectId !== this.projectId) {
       return null;
     }
@@ -276,14 +394,63 @@ export class HydratingMemoryStore extends MemoryStore {
       loaded.lastRemediationOrder = remediation.lastRemediationOrder;
       loaded.lastReviewedHeadSha = remediation.lastReviewedHeadSha;
     }
-    this.tasks.push(loaded);
-    return loaded;
+    const index = this.tasks.findIndex((row) => row.id === taskId);
+    if (index < 0) {
+      this.tasks.push(loaded);
+      return loaded;
+    }
+    const existing = this.tasks[index]!;
+    // Mutate in place so callers holding the task reference see refreshed status/version.
+    existing.status = loaded.status;
+    existing.rowVersion = loaded.rowVersion ?? 0;
+    existing.retryCount = loaded.retryCount;
+    existing.maxRetries = loaded.maxRetries;
+    existing.title = loaded.title;
+    existing.description = loaded.description;
+    existing.priority = loaded.priority;
+    existing.category = loaded.category;
+    existing.acceptanceCriteria = loaded.acceptanceCriteria;
+    existing.assignedAgentId = loaded.assignedAgentId;
+    existing.executorKind = loaded.executorKind;
+    existing.externalExecutionId = loaded.externalExecutionId;
+    existing.prNumber = loaded.prNumber;
+    existing.prUrl = loaded.prUrl;
+    existing.headBranch = loaded.headBranch;
+    existing.dispatchIdempotencyKey = loaded.dispatchIdempotencyKey;
+    existing.dispatchOutcome = loaded.dispatchOutcome;
+    existing.dispatchUncertain = loaded.dispatchUncertain;
+    existing.dispatchReconcileToken = loaded.dispatchReconcileToken;
+    // Keep local-only / not-yet-flushed fields when Postgres still has null.
+    existing.expectedRepoUrl = loaded.expectedRepoUrl ?? existing.expectedRepoUrl;
+    existing.expectedStartingRef = loaded.expectedStartingRef ?? existing.expectedStartingRef;
+    existing.expectedBranchPrefix = loaded.expectedBranchPrefix ?? existing.expectedBranchPrefix;
+    existing.expectedTaskMarker = loaded.expectedTaskMarker ?? existing.expectedTaskMarker;
+    existing.lastRejectionSummary =
+      loaded.lastRejectionSummary ?? existing.lastRejectionSummary;
+    existing.lastRequiredChanges = loaded.lastRequiredChanges ?? existing.lastRequiredChanges;
+    existing.lastRemediationOrder = loaded.lastRemediationOrder ?? existing.lastRemediationOrder;
+    existing.lastReviewedHeadSha = loaded.lastReviewedHeadSha ?? existing.lastReviewedHeadSha;
+    return existing;
   }
 
   async persistTask(taskId: string): Promise<void> {
     const task = this.tasks.find((row) => row.id === taskId);
     if (!task) return;
-    await this.repository.persistTaskSnapshot(task);
+    const { rowVersion } = await this.repository.persistTaskSnapshot(task);
+    task.rowVersion = rowVersion;
+  }
+
+  /**
+   * Refresh only rowVersion from Postgres onto the working in-memory task.
+   * Used after external writers (e.g. dispatch-state) bump the version.
+   */
+  async syncRowVersion(taskId: string): Promise<number | null> {
+    const task = this.tasks.find((row) => row.id === taskId);
+    if (!task) return null;
+    const loaded = await this.repository.loadTask(taskId);
+    if (!loaded) return null;
+    task.rowVersion = loaded.rowVersion ?? 0;
+    return task.rowVersion;
   }
 }
 

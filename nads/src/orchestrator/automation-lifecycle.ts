@@ -42,11 +42,13 @@ import { buildRemediationOrder } from "../review/remediation-order.js";
 import type { CodeReviewResult } from "../review/schema.js";
 import type { PullRequestDetail, PullRequestFile, CheckConclusion } from "../adapters/github-adapter.js";
 import { assertLiveAutomationSendConfig } from "../config/production-guards.js";
+import { isTaskConcurrencyConflictError } from "../db/postgres-task-store.js";
 
 /** Optional Postgres hydration hooks used by ingress HydratingMemoryStore. */
 type HydratableTaskStore = MemoryStore & {
   ensureTask?(taskId: string): Promise<DevelopmentTask | null>;
   persistTask?(taskId: string): Promise<void>;
+  syncRowVersion?(taskId: string): Promise<number | null>;
 };
 
 async function ensureTaskLoaded(
@@ -65,6 +67,27 @@ async function persistTaskIfSupported(store: MemoryStore, taskId: string): Promi
   if (typeof hydrating.persistTask === "function") {
     await hydrating.persistTask(taskId);
   }
+}
+
+/** Re-throw concurrency conflicts as structured completion failures (never silent retry/dispatch). */
+function concurrencyConflictOutcome(
+  taskId: string,
+  error: unknown,
+  prNumber?: number | null,
+  prUrl?: string | null,
+): AutomationCompleteOutcome {
+  const conflict = isTaskConcurrencyConflictError(error)
+    ? error
+    : null;
+  return {
+    taskId,
+    handled: false,
+    reason: conflict
+      ? `concurrency_conflict:${conflict.reason}`
+      : "concurrency_conflict",
+    prNumber: prNumber ?? undefined,
+    prUrl: prUrl ?? undefined,
+  };
 }
 
 export type AutomationDispatchOutcome = {
@@ -429,6 +452,29 @@ export async function dispatchAutomationTask(options: {
       expectedTaskMarker: task.expectedTaskMarker ?? null,
       dispatchIdempotencyKey: task.dispatchIdempotencyKey ?? null,
     });
+    // dispatchState.save bumps row_version — sync token only (keep working task mutations).
+    const hydrating = store as HydratableTaskStore;
+    if (typeof hydrating.syncRowVersion === "function") {
+      await hydrating.syncRowVersion(task.id);
+    }
+  }
+
+  // Durable status snapshot after dispatch (CAS). Conflicts are explicit — never re-dispatch.
+  try {
+    await persistTaskIfSupported(store, task.id);
+  } catch (error: unknown) {
+    if (isTaskConcurrencyConflictError(error)) {
+      return {
+        taskId: task.id,
+        sent: result.sent,
+        status: `concurrency_conflict:${error.reason}`,
+        idempotencyKey: payload.idempotencyKey,
+        executionId: result.executionId,
+        error: error.message,
+        uncertain,
+      };
+    }
+    throw error;
   }
 
   if (result.executionId) {
@@ -655,6 +701,11 @@ async function runReviewAndTransition(options: {
   idempotencyKey: string;
   source: string;
   githubEvidence?: GitHubReviewEvidence | null;
+  /**
+   * Optional live re-check that evidence head SHA still matches the PR tip
+   * immediately before recording ACCEPT. Must not perform Automation dispatch.
+   */
+  verifyAcceptHeadSha?: (reviewedHeadSha: string) => Promise<boolean>;
 }): Promise<{ decision: string; review: CodeReviewResult }> {
   const { store, task } = options;
   if (task.status === "AGENT_RUNNING") {
@@ -682,26 +733,45 @@ async function runReviewAndTransition(options: {
     applyRemediationFromReject(task, review, options.githubEvidence ?? null);
   }
 
+  let decision = review.decision;
+  let decisionSummary = review.summary;
+
+  if (decision === "ACCEPT") {
+    const reviewedHead = options.githubEvidence?.headSha ?? task.lastReviewedHeadSha ?? null;
+    if (!reviewedHead) {
+      decision = "BLOCKED";
+      decisionSummary = "Refusing ACCEPT — reviewed head SHA missing at accept time";
+    } else if (options.verifyAcceptHeadSha) {
+      const stillCurrent = await options.verifyAcceptHeadSha(reviewedHead);
+      if (!stillCurrent) {
+        decision = "BLOCKED";
+        decisionSummary =
+          "Refusing ACCEPT — PR head SHA changed after review evidence was collected";
+      }
+    }
+  }
+
   store.appendEvent({
     taskId: task.id,
     eventType: "review.completed",
     payload: {
-      decision: review.decision,
-      summary: review.summary,
+      decision,
+      summary: decisionSummary,
       source: options.source,
       reviewedCommit: task.lastReviewedHeadSha ?? options.githubEvidence?.headSha ?? null,
       remediationPresent: Boolean(task.lastRemediationOrder),
       evidenceComplete: options.githubEvidence?.complete ?? null,
+      acceptHeadVerified: decision === "ACCEPT",
     },
     idempotencyKey: options.idempotencyKey,
   });
 
-  if (review.decision === "ACCEPT") {
-    store.transition(task.id, "ACCEPTED", review.summary);
+  if (decision === "ACCEPT") {
+    store.transition(task.id, "ACCEPTED", decisionSummary);
     store.transition(task.id, "NEXT_TASK", "ready for selector");
     await options.journal?.clear(task.id);
-  } else if (review.decision === "BLOCKED") {
-    store.transition(task.id, "BLOCKED", review.summary);
+  } else if (decision === "BLOCKED") {
+    store.transition(task.id, "BLOCKED", decisionSummary);
   } else {
     // REJECT → revision, respecting maxRetries (never infinite).
     task.retryCount += 1;
@@ -712,7 +782,7 @@ async function runReviewAndTransition(options: {
     }
   }
 
-  return { decision: review.decision, review };
+  return { decision, review };
 }
 
 /**
@@ -859,7 +929,15 @@ export async function completeAutomationTaskFromGitHub(options: {
       }
       if (pr.merged) {
         store.transition(task.id, "BLOCKED", "PR already merged — refusing ACCEPT");
-        await persistTaskIfSupported(store, task.id);
+        try {
+          await persistTaskIfSupported(store, task.id);
+        } catch (error: unknown) {
+          if (isTaskConcurrencyConflictError(error)) {
+            await release(`concurrency_conflict:${error.reason}`);
+            return concurrencyConflictOutcome(task.id, error, prNumber, pr.url);
+          }
+          throw error;
+        }
         await receipts.finalizeCompletionLease({
           projectId: store.projectId,
           taskId: task.id,
@@ -973,6 +1051,13 @@ export async function completeAutomationTaskFromGitHub(options: {
         githubEvidence,
         idempotencyKey: `review:github:${task.id}:${verified.deliveryId}`,
         source: "github_completion",
+        verifyAcceptHeadSha:
+          prNumber && options.github.getPullRequest
+            ? async (reviewedHeadSha) => {
+                const latest = await options.github.getPullRequest!(prNumber);
+                return latest.headSha === reviewedHeadSha && !latest.merged;
+              }
+            : undefined,
       });
       decision = reviewed.decision;
     } catch (error: unknown) {
@@ -1008,7 +1093,21 @@ export async function completeAutomationTaskFromGitHub(options: {
       });
     }
 
-    await persistTaskIfSupported(store, task.id);
+    try {
+      await persistTaskIfSupported(store, task.id);
+    } catch (error: unknown) {
+      if (isTaskConcurrencyConflictError(error)) {
+        // Do not retry — retrying could race into duplicate terminal writes.
+        // Lease already finalized/released above; report conflict explicitly.
+        return concurrencyConflictOutcome(
+          task.id,
+          error,
+          task.prNumber ?? prNumber,
+          task.prUrl ?? verified.prUrl,
+        );
+      }
+      throw error;
+    }
 
     return {
       taskId: task.id,
@@ -1019,8 +1118,20 @@ export async function completeAutomationTaskFromGitHub(options: {
       prUrl: task.prUrl ?? verified.prUrl,
     };
   } catch (error: unknown) {
+    if (isTaskConcurrencyConflictError(error)) {
+      await release(`concurrency_conflict:${error.reason}`);
+      return concurrencyConflictOutcome(task.id, error, verified.prNumber, verified.prUrl);
+    }
     const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
-    await persistTaskIfSupported(store, task.id);
+    try {
+      await persistTaskIfSupported(store, task.id);
+    } catch (persistError: unknown) {
+      if (isTaskConcurrencyConflictError(persistError)) {
+        await release(`concurrency_conflict:${persistError.reason}`);
+        return concurrencyConflictOutcome(task.id, persistError, verified.prNumber, verified.prUrl);
+      }
+      // Prefer original failure reason if persist also fails non-concurrency.
+    }
     await release(`completion_failed:${message}`);
     return {
       taskId: task.id,
@@ -1136,7 +1247,6 @@ export async function completeAutomationTaskFromCallback(options: {
     task.prNumber = pr.number;
     task.prUrl = pr.url;
     task.headBranch = pr.headRef;
-    task.lastReviewedHeadSha = pr.headSha;
 
     let files: PullRequestFile[] = [];
     let checks: CheckConclusion[] = [];
@@ -1175,6 +1285,10 @@ export async function completeAutomationTaskFromCallback(options: {
         githubEvidence,
         idempotencyKey: `review:callback:${task.id}:${deliveryId}`,
         source: "automation_callback",
+        verifyAcceptHeadSha: async (reviewedHeadSha) => {
+          const latest = await options.github.getPullRequest!(callback.prNumber!);
+          return latest.headSha === reviewedHeadSha && !latest.merged;
+        },
       });
       decision = reviewed.decision;
     } catch {
@@ -1198,7 +1312,14 @@ export async function completeAutomationTaskFromCallback(options: {
       });
     }
 
-    await persistTaskIfSupported(store, task.id);
+    try {
+      await persistTaskIfSupported(store, task.id);
+    } catch (error: unknown) {
+      if (isTaskConcurrencyConflictError(error)) {
+        return concurrencyConflictOutcome(task.id, error, pr.number, pr.url);
+      }
+      throw error;
+    }
 
     return {
       taskId: task.id,
@@ -1209,8 +1330,19 @@ export async function completeAutomationTaskFromCallback(options: {
       prUrl: pr.url,
     };
   } catch (error: unknown) {
+    if (isTaskConcurrencyConflictError(error)) {
+      await release(`concurrency_conflict:${error.reason}`);
+      return concurrencyConflictOutcome(task.id, error, callback.prNumber, callback.prUrl);
+    }
     const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
-    await persistTaskIfSupported(store, task.id);
+    try {
+      await persistTaskIfSupported(store, task.id);
+    } catch (persistError: unknown) {
+      if (isTaskConcurrencyConflictError(persistError)) {
+        await release(`concurrency_conflict:${persistError.reason}`);
+        return concurrencyConflictOutcome(task.id, persistError, callback.prNumber, callback.prUrl);
+      }
+    }
     await release(`completion_failed:${message}`);
     return { taskId: task.id, handled: false, reason: "completion_failed" };
   }

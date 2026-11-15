@@ -194,6 +194,7 @@ export class PostgresDispatchStateStore implements DispatchStateStore {
            dispatch_outcome = $7,
            dispatch_uncertain = $8,
            dispatch_reconcile_token = $9,
+           row_version = row_version + 1,
            updated_at = now()
          where id = $1::uuid`,
         [
@@ -283,6 +284,7 @@ export class PostgresDispatchStateStore implements DispatchStateStore {
            dispatch_uncertain = false,
            dispatch_reconcile_token = null,
            dispatch_outcome = 'reconciled',
+           row_version = row_version + 1,
            updated_at = now()
          where id = $1::uuid`,
         [taskId],

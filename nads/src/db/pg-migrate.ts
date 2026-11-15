@@ -9,6 +9,7 @@ const MIGRATIONS = [
   "003_webhook_receipts_hardening.sql",
   "004_completion_claim_leases.sql",
   "005_one_shot_dispatch_gate.sql",
+  "006_task_row_version.sql",
 ] as const;
 
 export function migrationsDir(): string {

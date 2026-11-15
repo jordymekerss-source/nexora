@@ -37,6 +37,11 @@ export type DevelopmentTask = {
   lastRequiredChanges?: string[];
   lastRemediationOrder?: string;
   lastReviewedHeadSha?: string;
+  /**
+   * Optimistic concurrency token mirrored from development_tasks.row_version.
+   * Memory-only tasks default to 0; Postgres hydration overwrites from DB.
+   */
+  rowVersion?: number;
 };
 
 export type DevelopmentEvent = {
@@ -101,6 +106,7 @@ export class MemoryStore {
       maxRetries: this.settings.maxRetries,
       ...partial,
       title: partial.title,
+      rowVersion: partial.rowVersion ?? 0,
     };
     this.tasks.push(task);
     return task;

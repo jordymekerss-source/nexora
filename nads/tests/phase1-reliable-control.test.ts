@@ -499,9 +499,10 @@ describe("phase1: task store restart hydration (unit)", () => {
     expect(loaded?.status).toBe("REVISION_REQUIRED");
     expect(loaded?.lastRemediationOrder).toContain("remediation order");
     expect(loaded?.lastReviewedHeadSha).toBe("c".repeat(40));
-    // Second ensure hits memory cache (restart within process)
+    // Second ensure always reloads from repository (no sticky stale cache).
     const again = await store.ensureTask(taskId);
-    expect(again).toBe(loaded);
+    expect(again?.status).toBe("REVISION_REQUIRED");
+    expect(again?.lastReviewedHeadSha).toBe("c".repeat(40));
   });
 });
 

@@ -78,6 +78,8 @@ export {
   PostgresTaskRepository,
   HydratingMemoryStore,
   createIngressTaskStoreFromEnv,
+  TaskConcurrencyConflictError,
+  isTaskConcurrencyConflictError,
 } from "./db/postgres-task-store.js";
 export {
   MemoryOneShotDispatchGate,
