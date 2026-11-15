@@ -161,6 +161,7 @@ describe("automation webhook execution lifecycle", () => {
           state: "open",
           draft: true,
           headSha: "abc",
+        baseSha: "basedef",
         };
       },
       async listPullRequestFiles() {

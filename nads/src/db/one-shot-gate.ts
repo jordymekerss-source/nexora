@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import pg, { type Pool } from "pg";
+import { resolveDatabaseUrlFromEnv } from "../config/database-url.js";
 
 export type OneShotGateStatus = "armed" | "consumed" | "disarmed";
 
@@ -36,7 +37,8 @@ export type ConsumeOneShotResult =
     };
 
 /**
- * Persistent one-time authorization for Automation POST under NADS_SINGLE_TASK_MODE.
+ * Persistent one-time authorization for any live Automation POST.
+ * NADS_SINGLE_TASK_MODE remains an additional approved-task filter at the dispatch boundary.
  * Consume is atomic — concurrent workers cannot both win.
  */
 export interface OneShotDispatchGate {
@@ -393,10 +395,10 @@ export function createOneShotDispatchGateFromEnv(
     .trim()
     .toLowerCase();
   if (mode === "postgres" || mode === "pg") {
-    const url = env.DATABASE_URL?.trim();
+    const url = resolveDatabaseUrlFromEnv(env)?.trim();
     if (!url) {
       throw new Error(
-        "NADS_ONE_SHOT_GATE_STORE=postgres requires DATABASE_URL — refusing silent memory fallback",
+        "NADS_ONE_SHOT_GATE_STORE=postgres requires DATABASE_URL or POSTGRES_PASSWORD — refusing silent memory fallback",
       );
     }
     return PostgresOneShotDispatchGate.fromConnectionString(url);

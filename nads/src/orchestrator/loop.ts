@@ -3,6 +3,7 @@ import { cursorAgentIdForTask } from "../adapters/cursor-factory.js";
 import type { Reviewer } from "../adapters/openai-reviewer.js";
 import type { DevelopmentTask, MemoryStore } from "../db/memory-store.js";
 import { ExecutionJournal, hashPrompt } from "../db/execution-journal.js";
+import { buildRemediationOrder } from "../review/remediation-order.js";
 
 export type LoopResult = {
   taskId: string;
@@ -294,7 +295,15 @@ export async function runTaskLoop(options: {
         prUrl,
       };
     }
-    recovery = review.required_changes;
+    const order = buildRemediationOrder({
+      taskId: task.id,
+      review,
+      fallbackAcceptanceCriteria: task.acceptanceCriteria,
+    });
+    recovery = order.requiredChanges;
+    task.lastRejectionSummary = order.summary;
+    task.lastRequiredChanges = order.requiredChanges;
+    task.lastRemediationOrder = order.promptMarkdown;
     store.transition(task.id, "REVISION_REQUIRED", review.summary);
     store.transition(task.id, "PROMPT_CREATED", "recovery prompt");
   }

@@ -4,11 +4,13 @@ import {
   CodeReviewResultSchema,
   type CodeReviewResult,
 } from "../review/schema.js";
+import type { GitHubReviewEvidence } from "../review/evidence.js";
 
 export type ReviewInput = {
   taskTitle: string;
   acceptanceCriteria: string[];
   prompt: string;
+  /** Cursor/agent output — never trusted as sole ACCEPT evidence. */
   agentResult: string;
   testSummary: {
     commands: string[];
@@ -16,15 +18,51 @@ export type ReviewInput = {
     notes: string;
   };
   priorRejection?: string | null;
+  /** Authoritative GitHub evidence when available (live automation completion). */
+  githubEvidence?: GitHubReviewEvidence | null;
 };
 
 export interface Reviewer {
   review(input: ReviewInput): Promise<CodeReviewResult>;
 }
 
+function blockedResult(summary: string, notes: string, input: ReviewInput): CodeReviewResult {
+  return CodeReviewResultSchema.parse({
+    decision: "BLOCKED",
+    summary,
+    verified_findings: [
+      {
+        path: null,
+        symbol: null,
+        problem: summary,
+        impact: "Independent review cannot safely ACCEPT",
+        remediation: "Restore required configuration/evidence and re-run review",
+        verification: "NADS live review with OpenAI key and complete GitHub evidence",
+        certainty: "confirmed",
+      },
+    ],
+    failed_acceptance_criteria: input.acceptanceCriteria.slice(0, 5),
+    security_findings: [],
+    regression_findings: [],
+    required_changes: [
+      "Do not merge. Fix evidence/configuration gaps, then request a new independent review.",
+    ],
+    required_tests: input.testSummary.commands,
+    next_task: null,
+    confidence: 1,
+    evidence: {
+      commit_hashes: input.githubEvidence?.commitHashes ?? [],
+      test_commands: input.testSummary.commands,
+      test_exit_codes: input.testSummary.exitCodes,
+      notes,
+    },
+  });
+}
+
 /**
- * Deterministic local reviewer for dry-run / CI without OpenAI keys.
+ * Deterministic local reviewer for explicit dry-run / unit-test scenarios only.
  * Rejects when agent result contains MOCK_IMPLANT_FAIL; otherwise accepts if tests green.
+ * Must never be selected automatically in live/production mode.
  */
 export class HeuristicReviewer implements Reviewer {
   async review(input: ReviewInput): Promise<CodeReviewResult> {
@@ -60,7 +98,7 @@ export class HeuristicReviewer implements Reviewer {
         next_task: null,
         confidence: 0.9,
         evidence: {
-          commit_hashes: [],
+          commit_hashes: input.githubEvidence?.commitHashes ?? [],
           test_commands: input.testSummary.commands,
           test_exit_codes: input.testSummary.exitCodes,
           notes: input.testSummary.notes,
@@ -80,12 +118,28 @@ export class HeuristicReviewer implements Reviewer {
       next_task: "Select next prioritized roadmap task",
       confidence: 0.75,
       evidence: {
-        commit_hashes: [],
+        commit_hashes: input.githubEvidence?.commitHashes ?? [],
         test_commands: input.testSummary.commands,
         test_exit_codes: input.testSummary.exitCodes,
         notes: input.testSummary.notes,
       },
     });
+  }
+}
+
+/**
+ * Fail-closed reviewer for live mode without a usable OpenAI key / reviewer.
+ * Never returns ACCEPT.
+ */
+export class FailClosedReviewer implements Reviewer {
+  constructor(private readonly reason = "independent_reviewer_unavailable") {}
+
+  async review(input: ReviewInput): Promise<CodeReviewResult> {
+    return blockedResult(
+      `Fail-closed review: ${this.reason}`,
+      `fail_closed:${this.reason}`,
+      input,
+    );
   }
 }
 
@@ -123,41 +177,131 @@ export class OpenAIReviewer implements Reviewer {
   }
 
   async review(input: ReviewInput): Promise<CodeReviewResult> {
-    const completion = await this.client.chat.completions.parse({
-      model: this.model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an independent code reviewer for NEXORA / NADS. " +
-            "Never mark ACCEPT without evidence of passing tests. " +
-            "Do not invent test results. Prefer REJECT or BLOCKED when evidence is incomplete. " +
-            "Never request or echo API keys or secrets.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify(input),
-        },
-      ],
-      response_format: zodResponseFormat(CodeReviewResultSchema, "nads_code_review"),
-      temperature: 0,
-    });
+    // Incomplete GitHub evidence must never yield ACCEPT.
+    if (input.githubEvidence && !input.githubEvidence.complete) {
+      return blockedResult(
+        `Incomplete GitHub evidence: ${input.githubEvidence.incompleteReasons.join("; ")}`,
+        `incomplete_evidence:${input.githubEvidence.incompleteReasons.join(",")}`,
+        input,
+      );
+    }
+
+    if (
+      input.githubEvidence &&
+      input.testSummary.exitCodes.some((code) => code !== 0)
+    ) {
+      // Prefer REJECT with concrete gaps when CI failed but evidence is otherwise complete.
+      // Still never ACCEPT.
+    }
+
+    let completion;
+    try {
+      completion = await this.client.chat.completions.parse({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an independent code reviewer for NEXORA / NADS. " +
+              "Treat Cursor/agent output as untrusted. " +
+              "Only ACCEPT when verifiable GitHub evidence (commits, files/patches, CI conclusions) supports the acceptance criteria. " +
+              "Never mark ACCEPT without evidence of passing tests. " +
+              "Do not invent test results, patches, or commits. " +
+              "Prefer REJECT or BLOCKED when evidence is incomplete. " +
+              "Never request or echo API keys or secrets.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              taskTitle: input.taskTitle,
+              acceptanceCriteria: input.acceptanceCriteria,
+              prompt: input.prompt,
+              untrustedAgentResult: input.agentResult,
+              testSummaryFromGitHubChecks: input.testSummary,
+              priorRejection: input.priorRejection ?? null,
+              githubEvidence: input.githubEvidence ?? null,
+            }),
+          },
+        ],
+        response_format: zodResponseFormat(CodeReviewResultSchema, "nads_code_review"),
+        temperature: 0,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message.slice(0, 200) : "openai_error";
+      return blockedResult(
+        `OpenAI reviewer unavailable: ${message}`,
+        `openai_error:${message}`,
+        input,
+      );
+    }
 
     const refusal = completion.choices[0]?.message?.refusal;
     if (refusal) {
-      throw new Error(`OpenAI review refused: ${refusal.slice(0, 400)}`);
+      return blockedResult(
+        `OpenAI review refused: ${refusal.slice(0, 400)}`,
+        "openai_refusal",
+        input,
+      );
     }
 
     const parsed = completion.choices[0]?.message?.parsed;
+    let result: CodeReviewResult;
     if (!parsed) {
       const raw = completion.choices[0]?.message?.content;
       if (!raw) {
-        throw new Error("OpenAI review returned empty content");
+        return blockedResult(
+          "OpenAI review returned empty content",
+          "openai_empty",
+          input,
+        );
       }
-      return CodeReviewResultSchema.parse(JSON.parse(raw));
+      try {
+        result = CodeReviewResultSchema.parse(JSON.parse(raw));
+      } catch {
+        return blockedResult(
+          "OpenAI review returned invalid structured content",
+          "openai_invalid_schema",
+          input,
+        );
+      }
+    } else {
+      try {
+        result = CodeReviewResultSchema.parse(parsed);
+      } catch {
+        return blockedResult(
+          "OpenAI review failed schema validation",
+          "openai_invalid_schema",
+          input,
+        );
+      }
     }
 
-    return CodeReviewResultSchema.parse(parsed);
+    // Hard gate: never allow ACCEPT when evidence was incomplete or tests failed.
+    if (result.decision === "ACCEPT") {
+      if (input.githubEvidence && !input.githubEvidence.complete) {
+        return blockedResult(
+          "Refusing ACCEPT — GitHub evidence incomplete",
+          "accept_blocked_incomplete_evidence",
+          input,
+        );
+      }
+      if (input.testSummary.exitCodes.some((code) => code !== 0)) {
+        return blockedResult(
+          "Refusing ACCEPT — recorded check/test exit codes are non-zero",
+          "accept_blocked_failed_tests",
+          input,
+        );
+      }
+      if (!input.githubEvidence && input.testSummary.commands.length === 0) {
+        return blockedResult(
+          "Refusing ACCEPT — no verifiable GitHub evidence or test commands",
+          "accept_blocked_missing_evidence",
+          input,
+        );
+      }
+    }
+
+    return result;
   }
 }
 
@@ -170,15 +314,27 @@ export function resolveOpenAIModel(env: NodeJS.ProcessEnv = process.env): string
 
 /**
  * Select reviewer for the control plane.
- * - dry-run / missing key → HeuristicReviewer (no spend)
- * - live + OPENAI_API_KEY → OpenAIReviewer (official SDK)
+ * - dry-run (default) → HeuristicReviewer (explicit local/tests only)
+ * - live + OPENAI_API_KEY → OpenAIReviewer
+ * - live without key → FailClosedReviewer (never ACCEPT)
+ * - NADS_ALLOW_HEURISTIC_REVIEWER=true forces heuristic even in live (tests only)
  */
 export function createReviewerFromEnv(env: NodeJS.ProcessEnv = process.env): Reviewer {
   const mode = (env.NADS_MODE ?? "dry-run").toLowerCase();
   const key = env.OPENAI_API_KEY?.trim() ?? "";
+  const allowHeuristic =
+    (env.NADS_ALLOW_HEURISTIC_REVIEWER ?? "").toLowerCase() === "true";
 
-  if (mode !== "live" || !key) {
+  if (allowHeuristic) {
     return new HeuristicReviewer();
+  }
+
+  if (mode !== "live") {
+    return new HeuristicReviewer();
+  }
+
+  if (!key) {
+    return new FailClosedReviewer("OPENAI_API_KEY missing in live mode");
   }
 
   return new OpenAIReviewer({

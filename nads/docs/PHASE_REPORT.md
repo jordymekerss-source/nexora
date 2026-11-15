@@ -84,7 +84,7 @@ Verdict: **READY AFTER SPECIFIC MANUAL STEPS** (see `docs/READINESS_REPORT.md`).
 2. Create Automation, pin Composer/Grok, copy URL/key; paste static instructions from payload contract  
 3. Host ingress behind HTTPS; set `GITHUB_WEBHOOK_SECRET`; register GitHub webhook  
 4. Set `GITHUB_TOKEN` for independent PR/branch verification  
-5. Provision Postgres; set `NADS_WEBHOOK_RECEIPT_STORE=postgres` + `DATABASE_URL`; apply migrations 001–004  
+5. Provision Postgres; set `NADS_WEBHOOK_RECEIPT_STORE=postgres` + `DATABASE_URL`; apply migrations 001–005  
 6. Optionally enable on-demand with **low hard limit** — do **not** prepaid top-up / auto top-up for NADS  
 7. Flip `NADS_AUTOMATION_ENABLED=true` only after eligibility verified  
 

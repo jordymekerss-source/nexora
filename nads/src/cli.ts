@@ -20,6 +20,7 @@ import {
   PostgresWebhookReceiptStore,
 } from "./db/webhook-receipts.js";
 import { createDispatchStateStoreFromEnv } from "./db/dispatch-state.js";
+import { createIngressTaskStoreFromEnv } from "./db/postgres-task-store.js";
 import {
   createOneShotDispatchGateFromEnv,
   readSingleTaskModePolicy,
@@ -29,6 +30,7 @@ import {
   assertProductionPersistenceConfig,
   resolvePersistenceTier,
 } from "./config/production-guards.js";
+import { ensureDatabaseUrlEnv } from "./config/database-url.js";
 import { createNadsIngressServer, listenNadsIngress } from "./ingress/http-server.js";
 
 function redactSecrets(value: unknown): unknown {
@@ -530,6 +532,8 @@ async function ingressServe(): Promise<void> {
     return;
   }
 
+  ensureDatabaseUrlEnv(process.env);
+
   const githubSecret = process.env.GITHUB_WEBHOOK_SECRET?.trim() ?? "";
   if (!githubSecret) {
     console.log(
@@ -556,11 +560,29 @@ async function ingressServe(): Promise<void> {
     return;
   }
 
-  const store = new MemoryStore();
   const github = createGitHubAdapterFromEnv();
   const reviewer = createReviewerFromEnv();
   const receipts = createWebhookReceiptStoreFromEnv();
   const dispatchState = createDispatchStateStoreFromEnv();
+  let store;
+  let projectId: string;
+  try {
+    const hydrated = await createIngressTaskStoreFromEnv(process.env, receipts);
+    store = hydrated.store;
+    projectId = store.projectId;
+  } catch (error: unknown) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: error instanceof Error ? error.message : "ingress_task_store_failed",
+      }),
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const automationSendEnabled =
+    (process.env.NADS_AUTOMATION_ENABLED ?? "false").toLowerCase() === "true";
   const server = createNadsIngressServer({
     store,
     github,
@@ -569,6 +591,7 @@ async function ingressServe(): Promise<void> {
     dispatchState,
     githubWebhookSecret: githubSecret,
     automationCallbackSecret: process.env.NADS_AUTOMATION_CALLBACK_SECRET,
+    automationSendEnabled,
     maxBodyBytes: Number(process.env.NADS_INGRESS_MAX_BODY_BYTES ?? 1_048_576),
     rateLimitPerWindow: Number(process.env.NADS_INGRESS_RATE_LIMIT ?? 120),
     rateLimitWindowMs: Number(process.env.NADS_INGRESS_RATE_WINDOW_MS ?? 60_000),
@@ -593,14 +616,16 @@ async function ingressServe(): Promise<void> {
       ok: true,
       listening: `http://${bound.host}:${bound.port}`,
       routes: ["/health", "/ready", "/webhooks/github", "/webhooks/automation-callback"],
-      automationSendEnabled: false,
+      automationSendEnabled,
+      projectId,
       persistence,
-      note: "Receive-only ingress. NADS_AUTOMATION_ENABLED remains independent and defaults false.",
+      note: "Ingress serves receive endpoints. Automation send follows NADS_AUTOMATION_ENABLED (default false).",
     }),
   );
 }
 
 async function readinessStatus(): Promise<void> {
+  ensureDatabaseUrlEnv(process.env);
   const tiers = resolvePersistenceTier(process.env);
   let productionGuard: { ok: boolean; error?: string } = { ok: true };
   try {
@@ -639,9 +664,14 @@ async function readinessStatus(): Promise<void> {
 
 /** Apply SQL migrations 001–005 using compiled runtime (no tsx required). */
 async function migrate(): Promise<void> {
-  const url = process.env.DATABASE_URL?.trim();
+  const url = ensureDatabaseUrlEnv(process.env)?.trim();
   if (!url) {
-    console.log(JSON.stringify({ ok: false, error: "DATABASE_URL required for migrate" }));
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: "DATABASE_URL or POSTGRES_PASSWORD required for migrate",
+      }),
+    );
     process.exitCode = 2;
     return;
   }

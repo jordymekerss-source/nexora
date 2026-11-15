@@ -46,7 +46,7 @@ cd nads
 ## 3. Secret generation
 
 ```bash
-openssl rand -base64 32   # POSTGRES_PASSWORD
+openssl rand -hex 32      # POSTGRES_PASSWORD (hex is URL-safe; entrypoint also percent-encodes)
 openssl rand -hex 32      # GITHUB_WEBHOOK_SECRET
 ```
 
@@ -117,15 +117,26 @@ docker compose -f compose.hetzner.yml --env-file .env.hetzner run --rm \
   nads node dist/cli.js migrate
 ```
 
-Equivalent (explicit URL; still requires the compose project network + running postgres):
-
-```bash
-docker compose -f compose.hetzner.yml --env-file .env.hetzner run --rm \
-  -e DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
-  nads node dist/cli.js migrate
-```
+The image entrypoint builds a **percent-encoded** `DATABASE_URL` from `POSTGRES_*` when unset.  
+Do not interpolate a raw password into `DATABASE_URL` yourself unless you percent-encode it first.
 
 Expected JSON: `"migrations":["001","002","003","004","005"]`.
+
+After migrate, **seed a project** (and at least one task before expecting completion handling):
+
+```bash
+docker compose -f compose.hetzner.yml --env-file .env.hetzner exec -T postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+insert into development_projects (name, repository_url)
+select 'nexora', 'https://github.com/jordymekerss-source/nexora'
+where not exists (
+  select 1 from development_projects
+  where repository_url = 'https://github.com/jordymekerss-source/nexora'
+);
+SQL
+```
+
+Optionally set `NADS_PROJECT_ID` in `.env.hetzner` to the inserted UUID.
 
 Production runtime uses `node dist/cli.js migrate` (compiled). Local-dev equivalent is `npm run migrate` (tsx) — do not require tsx on the VPS image.
 
@@ -151,9 +162,18 @@ curl -sS http://127.0.0.1:8787/health
 curl -sS http://127.0.0.1:8787/ready
 ```
 
-`health` must show `automationSend: false`.  
-Compose healthchecks cover Postgres (`pg_isready`) and NADS (`GET /health` via Node fetch).  
+`health.automationSend` reflects `NADS_AUTOMATION_ENABLED` (must be `false` for receive-only).  
+`/ready` must be `ok: true` (Postgres receipt store ping). Compose healthchecks use **`GET /ready`**.  
 Port **8787 is bound to 127.0.0.1 only** on the host; the process listens on `0.0.0.0:8787` inside the container.
+
+### Delivery dedupe
+
+| Path | Behavior |
+|---|---|
+| Same process, duplicate `X-GitHub-Delivery` | HTTP **409** `replay` (in-memory `seenDeliveryIds`) |
+| Multi-instance / after restart | HTTP **200** `handled: false`, `reason: "duplicate_delivery"` (Postgres receipt `tryClaim`) |
+
+Durable source of truth is the Postgres receipt unique key `(project_id, provider, delivery_id)`.
 
 ---
 

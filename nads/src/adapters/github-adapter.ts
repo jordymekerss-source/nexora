@@ -23,6 +23,7 @@ export type PullRequestDetail = PullRequestSummary & {
   state: string;
   draft: boolean;
   headSha: string;
+  baseSha: string;
 };
 
 export type PullRequestFile = {
@@ -161,7 +162,7 @@ type GhPrDetailResponse = {
   state: string;
   draft?: boolean;
   head: { ref: string; sha: string };
-  base: { ref: string };
+  base: { ref: string; sha: string };
 };
 type GhPrFileResponse = {
   filename: string;
@@ -435,6 +436,7 @@ export class HttpGitHubAdapter implements GitHubAdapter {
       state: pr.state,
       draft: Boolean(pr.draft),
       headSha: pr.head.sha,
+      baseSha: pr.base.sha,
     };
   }
 

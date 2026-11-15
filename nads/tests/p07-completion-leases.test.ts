@@ -48,6 +48,7 @@ function mockGithub(taskId: string, overrides?: Partial<GitHubAdapter>): GitHubA
         state: "open",
         draft: true,
         headSha: "abc",
+        baseSha: "basedef",
       };
     },
     async listPullRequestFiles() {

@@ -21,7 +21,7 @@ Do not import `/nads` from `/src` application code. Do not add the OpenAI SDK to
 
 - Automation webhook send (`NADS_AUTOMATION_ENABLED=false` until account eligibility verified)
 - Hosted TLS termination + public GitHub → NADS ingress deployment
-- PostgreSQL + Redis + BullMQ production workers (SQL migrations ready through `003`)
+- PostgreSQL + Redis + BullMQ production workers (SQL migrations ready through `005`)
 - Development Control Center UI
 
 ## Setup
@@ -64,7 +64,7 @@ Later / optional:
 - `GITHUB_TOKEN`
 - `DATABASE_URL` / `REDIS_URL`
 
-**Production receipt store:** set `NADS_WEBHOOK_RECEIPT_STORE=postgres`, `DATABASE_URL`, and apply migrations `001`–`004`. See [`docs/DATABASE.md`](docs/DATABASE.md). File store is single-node only; memory is for tests.
+**Production receipt store:** set `NADS_WEBHOOK_RECEIPT_STORE=postgres`, `DATABASE_URL`, and apply migrations `001`–`005`. See [`docs/DATABASE.md`](docs/DATABASE.md). File store is single-node only; memory is for tests.
 
 **Activation prep:** [`docs/READINESS_REPORT.md`](docs/READINESS_REPORT.md) · [`docs/ACTIVATION_CHECKLIST.md`](docs/ACTIVATION_CHECKLIST.md) · [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · [`docs/AUTOMATION_INSTRUCTIONS.md`](docs/AUTOMATION_INSTRUCTIONS.md)
 

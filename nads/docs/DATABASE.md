@@ -19,6 +19,7 @@ Apply in order against the NADS database (separate from SaaS Supabase):
 2. `db/migrations/002_automation_executor.sql`
 3. `db/migrations/003_webhook_receipts_hardening.sql`
 4. `db/migrations/004_completion_claim_leases.sql`
+5. `db/migrations/005_one_shot_dispatch_gate.sql`
 
 Helper: `applyNadsMigrations(DATABASE_URL)` in `src/db/pg-migrate.ts`.
 

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import pg, { type Pool, type PoolClient } from "pg";
+import { resolveDatabaseUrlFromEnv } from "../config/database-url.js";
 
 export type WebhookProvider = "github" | "automation_callback" | "completion_claim";
 
@@ -763,10 +764,10 @@ export function createWebhookReceiptStoreFromEnv(
 ): WebhookReceiptStore {
   const mode = (env.NADS_WEBHOOK_RECEIPT_STORE ?? "memory").trim().toLowerCase();
   if (mode === "postgres" || mode === "pg") {
-    const url = env.DATABASE_URL?.trim();
+    const url = resolveDatabaseUrlFromEnv(env)?.trim();
     if (!url) {
       throw new Error(
-        "NADS_WEBHOOK_RECEIPT_STORE=postgres requires DATABASE_URL — refusing silent memory fallback",
+        "NADS_WEBHOOK_RECEIPT_STORE=postgres requires DATABASE_URL or POSTGRES_PASSWORD — refusing silent memory fallback",
       );
     }
     return PostgresWebhookReceiptStore.fromConnectionString(url);

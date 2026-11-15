@@ -32,6 +32,39 @@ import {
 import type { VerifiedGitHubWebhook } from "../ingress/github-webhook.js";
 import { isAutomationCompletionEvent } from "../ingress/github-webhook.js";
 import type { AutomationCallbackPayload } from "../contracts/automation-payload.js";
+import {
+  buildGitHubReviewEvidence,
+  formatGitHubEvidenceForReviewer,
+  testSummaryFromChecks,
+  type GitHubReviewEvidence,
+} from "../review/evidence.js";
+import { buildRemediationOrder } from "../review/remediation-order.js";
+import type { CodeReviewResult } from "../review/schema.js";
+import type { PullRequestDetail, PullRequestFile, CheckConclusion } from "../adapters/github-adapter.js";
+
+/** Optional Postgres hydration hooks used by ingress HydratingMemoryStore. */
+type HydratableTaskStore = MemoryStore & {
+  ensureTask?(taskId: string): Promise<DevelopmentTask | null>;
+  persistTask?(taskId: string): Promise<void>;
+};
+
+async function ensureTaskLoaded(
+  store: MemoryStore,
+  taskId: string,
+): Promise<DevelopmentTask | null> {
+  const hydrating = store as HydratableTaskStore;
+  if (typeof hydrating.ensureTask === "function") {
+    return hydrating.ensureTask(taskId);
+  }
+  return store.tasks.find((row) => row.id === taskId) ?? null;
+}
+
+async function persistTaskIfSupported(store: MemoryStore, taskId: string): Promise<void> {
+  const hydrating = store as HydratableTaskStore;
+  if (typeof hydrating.persistTask === "function") {
+    await hydrating.persistTask(taskId);
+  }
+}
 
 export type AutomationDispatchOutcome = {
   taskId: string;
@@ -250,14 +283,24 @@ export async function dispatchAutomationTask(options: {
   }
 
   const startingRef = options.startingRef ?? "main";
+  const priorRejection =
+    options.priorRejection ?? task.lastRejectionSummary ?? task.lastRemediationOrder ?? null;
+  const requiredChanges =
+    options.requiredChanges ??
+    task.lastRequiredChanges ??
+    (task.lastRemediationOrder ? [task.lastRemediationOrder] : []);
   const payload = buildDispatchPayload({
     task,
     repoUrl: options.repoUrl,
     startingRef,
     attempt,
-    priorRejection: options.priorRejection,
-    requiredChanges: options.requiredChanges,
+    priorRejection,
+    requiredChanges,
   });
+  // Prefer the structured remediation markdown as the repair prompt body when present.
+  if (task.lastRemediationOrder && task.status === "AGENT_RUNNING" && attempt > 1) {
+    payload.prompt = `${task.lastRemediationOrder}\n\n---\n\n${payload.prompt}`;
+  }
   task.lastPrompt = payload.prompt;
   task.dispatchIdempotencyKey = payload.idempotencyKey;
   task.executorKind = executor.kind === "automation" ? "automation" : "mock";
@@ -280,10 +323,10 @@ export async function dispatchAutomationTask(options: {
     };
   }
 
-  // One-shot gate: consume atomic authorization only when a live Automation POST will be attempted.
+  // One-shot gate: consume atomic authorization for any live Automation POST (not only single-task mode).
+  // NADS_SINGLE_TASK_MODE remains an additional approved-task filter above; the gate always applies on send.
   const env = options.singleTaskEnv ?? process.env;
   const willAttemptNetworkSend =
-    singleTask.enabled &&
     executor.kind === "automation" &&
     (env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() === "true" &&
     Boolean(env.NADS_AUTOMATION_WEBHOOK_URL?.trim() && env.NADS_AUTOMATION_WEBHOOK_KEY?.trim());
@@ -520,6 +563,59 @@ async function verifyBoundPullRequest(options: {
   };
 }
 
+function resolveGithubOwnerRepo(
+  task: DevelopmentTask,
+  github: GitHubAdapter,
+): { owner: string; repo: string } {
+  const fromTask = task.expectedRepoUrl ? parseGithubRepoUrl(task.expectedRepoUrl) : null;
+  if (fromTask) return fromTask;
+  const adapter = github as GitHubAdapter & { owner?: string; repo?: string };
+  if (typeof adapter.owner === "string" && typeof adapter.repo === "string") {
+    return { owner: adapter.owner, repo: adapter.repo };
+  }
+  return { owner: "unknown", repo: "unknown" };
+}
+
+async function gatherPullRequestEvidence(options: {
+  github: GitHubAdapter;
+  task: DevelopmentTask;
+  pr: PullRequestDetail;
+  files: PullRequestFile[];
+  checks: CheckConclusion[];
+}): Promise<GitHubReviewEvidence> {
+  const { owner, repo } = resolveGithubOwnerRepo(options.task, options.github);
+  return buildGitHubReviewEvidence({
+    owner,
+    repo,
+    prNumber: options.pr.number,
+    prUrl: options.pr.url,
+    headRef: options.pr.headRef,
+    baseRef: options.pr.baseRef,
+    headSha: options.pr.headSha,
+    baseSha: options.pr.baseSha,
+    files: options.files,
+    checks: options.checks,
+    acceptanceCriteria: options.task.acceptanceCriteria,
+  });
+}
+
+function applyRemediationFromReject(
+  task: DevelopmentTask,
+  review: CodeReviewResult,
+  evidence: GitHubReviewEvidence | null,
+): void {
+  const order = buildRemediationOrder({
+    taskId: task.id,
+    review,
+    evidence,
+    fallbackAcceptanceCriteria: task.acceptanceCriteria,
+  });
+  task.lastRejectionSummary = order.summary;
+  task.lastRequiredChanges = order.requiredChanges;
+  task.lastRemediationOrder = order.promptMarkdown;
+  task.lastReviewedHeadSha = order.reviewedCommit ?? undefined;
+}
+
 async function runReviewAndTransition(options: {
   store: MemoryStore;
   reviewer: Reviewer;
@@ -529,7 +625,8 @@ async function runReviewAndTransition(options: {
   testSummary: { commands: string[]; exitCodes: number[]; notes: string };
   idempotencyKey: string;
   source: string;
-}): Promise<{ decision: string }> {
+  githubEvidence?: GitHubReviewEvidence | null;
+}): Promise<{ decision: string; review: CodeReviewResult }> {
   const { store, task } = options;
   if (task.status === "AGENT_RUNNING") {
     store.transition(task.id, "TESTING", `${options.source} evidence gathered`);
@@ -544,12 +641,24 @@ async function runReviewAndTransition(options: {
     prompt: task.lastPrompt ?? task.description,
     agentResult: options.agentResult,
     testSummary: options.testSummary,
+    githubEvidence: options.githubEvidence ?? null,
   });
+
+  if (review.decision === "REJECT") {
+    applyRemediationFromReject(task, review, options.githubEvidence ?? null);
+  }
 
   store.appendEvent({
     taskId: task.id,
     eventType: "review.completed",
-    payload: { decision: review.decision, summary: review.summary, source: options.source },
+    payload: {
+      decision: review.decision,
+      summary: review.summary,
+      source: options.source,
+      reviewedCommit: task.lastReviewedHeadSha ?? options.githubEvidence?.headSha ?? null,
+      remediationPresent: Boolean(task.lastRemediationOrder),
+      evidenceComplete: options.githubEvidence?.complete ?? null,
+    },
     idempotencyKey: options.idempotencyKey,
   });
 
@@ -560,6 +669,7 @@ async function runReviewAndTransition(options: {
   } else if (review.decision === "BLOCKED") {
     store.transition(task.id, "BLOCKED", review.summary);
   } else {
+    // REJECT → revision, respecting maxRetries (never infinite).
     task.retryCount += 1;
     if (task.retryCount > Math.min(task.maxRetries, 3)) {
       store.transition(task.id, "BLOCKED", "max retries exceeded");
@@ -568,7 +678,7 @@ async function runReviewAndTransition(options: {
     }
   }
 
-  return { decision: review.decision };
+  return { decision: review.decision, review };
 }
 
 /**
@@ -597,7 +707,7 @@ export async function completeAutomationTaskFromGitHub(options: {
     return { taskId: "unknown", handled: false, reason: "missing_task_correlation" };
   }
 
-  const task = store.tasks.find((row) => row.id === verified.taskId);
+  const task = await ensureTaskLoaded(store, verified.taskId);
   if (!task) {
     return { taskId: verified.taskId, handled: false, reason: "task_not_found" };
   }
@@ -695,12 +805,11 @@ export async function completeAutomationTaskFromGitHub(options: {
       };
     }
 
-    let filesSummary = "";
-    let checks: Array<{ name: string; conclusion: string | null }> = [];
+    let githubEvidence: GitHubReviewEvidence | null = null;
     const prNumber = verifiedPr.prNumber ?? verified.prNumber;
 
     if (prNumber && options.github.getPullRequest && options.github.listPullRequestFiles) {
-      let pr;
+      let pr: PullRequestDetail;
       try {
         pr = await options.github.getPullRequest(prNumber);
       } catch (error: unknown) {
@@ -716,6 +825,7 @@ export async function completeAutomationTaskFromGitHub(options: {
       }
       if (pr.merged) {
         store.transition(task.id, "BLOCKED", "PR already merged — refusing ACCEPT");
+        await persistTaskIfSupported(store, task.id);
         await receipts.finalizeCompletionLease({
           projectId: store.projectId,
           taskId: task.id,
@@ -730,13 +840,11 @@ export async function completeAutomationTaskFromGitHub(options: {
           prUrl: pr.url,
         };
       }
+      let files: PullRequestFile[] = [];
+      let checks: CheckConclusion[] = [];
       try {
-        const files = await options.github.listPullRequestFiles(prNumber);
+        files = await options.github.listPullRequestFiles(prNumber);
         checks = await options.github.getCheckConclusions(pr.headSha);
-        filesSummary = files
-          .slice(0, 40)
-          .map((file) => `${file.status} ${file.filename} (+${file.additions}/-${file.deletions})`)
-          .join("\n");
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message.slice(0, 200) : "evidence_failed";
         await release(`evidence_failed:${message}`);
@@ -748,9 +856,17 @@ export async function completeAutomationTaskFromGitHub(options: {
           prUrl: pr.url,
         };
       }
+      githubEvidence = await gatherPullRequestEvidence({
+        github: options.github,
+        task,
+        pr,
+        files,
+        checks,
+      });
       task.prNumber = pr.number;
       task.prUrl = pr.url;
       task.headBranch = pr.headRef;
+      task.lastReviewedHeadSha = pr.headSha;
       await options.journal?.upsert({
         taskId: task.id,
         agentId: task.assignedAgentId ?? task.externalExecutionId,
@@ -764,34 +880,46 @@ export async function completeAutomationTaskFromGitHub(options: {
         executorKind: task.executorKind,
         updatedAt: new Date().toISOString(),
       });
+    } else {
+      // Without PR file/check APIs we cannot ACCEPT — evidence is incomplete by construction.
+      githubEvidence = buildGitHubReviewEvidence({
+        owner: "unknown",
+        repo: "unknown",
+        prNumber: prNumber ?? null,
+        prUrl: verified.prUrl ?? null,
+        headRef: verified.headBranch ?? null,
+        baseRef: null,
+        headSha: null,
+        baseSha: null,
+        files: [],
+        checks: [],
+        acceptanceCriteria: task.acceptanceCriteria,
+      });
     }
 
     let decision: string;
     try {
-      const failedChecks = checks.filter(
-        (check) => check.conclusion && check.conclusion !== "success",
-      );
+      const evidenceText = githubEvidence
+        ? formatGitHubEvidenceForReviewer(githubEvidence)
+        : "(no github evidence)";
+      const testSummary = githubEvidence
+        ? testSummaryFromChecks(githubEvidence.checks)
+        : { commands: [], exitCodes: [], notes: "missing_github_evidence" };
       const reviewed = await runReviewAndTransition({
         store,
         reviewer: options.reviewer,
         task,
         journal: options.journal,
+        // Cursor/agent narrative is untrusted; authoritative content is githubEvidence.
         agentResult: [
+          "UNTRUSTED Cursor/automation narrative (do not ACCEPT from this alone):",
           `PR ${prNumber ?? "unknown"} ${verifiedPr.prUrl ?? verified.prUrl ?? ""}`,
           `Branch ${verifiedPr.headBranch ?? verified.headBranch ?? "unknown"}`,
-          "Files:",
-          filesSummary || "(no files fetched)",
-          "Checks:",
-          checks.map((check) => `${check.name}:${check.conclusion ?? "pending"}`).join(", ") ||
-            "none",
+          "",
+          evidenceText,
         ].join("\n"),
-        testSummary: {
-          commands: checks.map((check) => check.name),
-          exitCodes: checks.map((check) => (check.conclusion === "success" ? 0 : 1)),
-          notes: failedChecks.length
-            ? `Failed checks: ${failedChecks.map((check) => check.name).join(", ")}`
-            : "GitHub evidence path",
-        },
+        testSummary,
+        githubEvidence,
         idempotencyKey: `review:github:${task.id}:${verified.deliveryId}`,
         source: "github_completion",
       });
@@ -829,6 +957,8 @@ export async function completeAutomationTaskFromGitHub(options: {
       });
     }
 
+    await persistTaskIfSupported(store, task.id);
+
     return {
       taskId: task.id,
       handled: true,
@@ -839,6 +969,7 @@ export async function completeAutomationTaskFromGitHub(options: {
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
+    await persistTaskIfSupported(store, task.id);
     await release(`completion_failed:${message}`);
     return {
       taskId: task.id,
@@ -868,7 +999,7 @@ export async function completeAutomationTaskFromCallback(options: {
 }): Promise<AutomationCompleteOutcome> {
   const { store, callback } = options;
   const receipts = options.receipts ?? store.receipts;
-  const task = store.tasks.find((row) => row.id === callback.taskId);
+  const task = await ensureTaskLoaded(store, callback.taskId);
   if (!task) {
     return { taskId: callback.taskId, handled: false, reason: "task_not_found" };
   }
@@ -943,7 +1074,7 @@ export async function completeAutomationTaskFromCallback(options: {
       return { taskId: task.id, handled: false, reason: verifiedPr.reason };
     }
 
-    let pr;
+    let pr: PullRequestDetail;
     try {
       pr = await options.github.getPullRequest(callback.prNumber);
     } catch {
@@ -954,6 +1085,27 @@ export async function completeAutomationTaskFromCallback(options: {
     task.prNumber = pr.number;
     task.prUrl = pr.url;
     task.headBranch = pr.headRef;
+    task.lastReviewedHeadSha = pr.headSha;
+
+    let files: PullRequestFile[] = [];
+    let checks: CheckConclusion[] = [];
+    if (options.github.listPullRequestFiles) {
+      try {
+        files = await options.github.listPullRequestFiles(callback.prNumber);
+        checks = await options.github.getCheckConclusions(pr.headSha);
+      } catch {
+        await release("evidence_retrieval_failed");
+        return { taskId: task.id, handled: false, reason: "evidence_retrieval_failed" };
+      }
+    }
+
+    const githubEvidence = await gatherPullRequestEvidence({
+      github: options.github,
+      task,
+      pr,
+      files,
+      checks,
+    });
 
     let decision: string;
     try {
@@ -962,8 +1114,14 @@ export async function completeAutomationTaskFromCallback(options: {
         reviewer: options.reviewer,
         task,
         journal: options.journal,
-        agentResult: `Callback succeeded. PR ${pr.number} ${pr.url} branch ${pr.headRef}`,
-        testSummary: { commands: [], exitCodes: [], notes: "automation callback path" },
+        agentResult: [
+          "UNTRUSTED automation callback narrative (do not ACCEPT from this alone):",
+          `Callback succeeded. PR ${pr.number} ${pr.url} branch ${pr.headRef}`,
+          "",
+          formatGitHubEvidenceForReviewer(githubEvidence),
+        ].join("\n"),
+        testSummary: testSummaryFromChecks(githubEvidence.checks),
+        githubEvidence,
         idempotencyKey: `review:callback:${task.id}:${deliveryId}`,
         source: "automation_callback",
       });
@@ -989,6 +1147,8 @@ export async function completeAutomationTaskFromCallback(options: {
       });
     }
 
+    await persistTaskIfSupported(store, task.id);
+
     return {
       taskId: task.id,
       handled: true,
@@ -999,6 +1159,7 @@ export async function completeAutomationTaskFromCallback(options: {
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
+    await persistTaskIfSupported(store, task.id);
     await release(`completion_failed:${message}`);
     return { taskId: task.id, handled: false, reason: "completion_failed" };
   }

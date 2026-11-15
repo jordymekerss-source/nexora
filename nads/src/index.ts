@@ -19,7 +19,21 @@ export {
 } from "./adapters/executor.js";
 export { AutomationExecutor, MockAutomationExecutor } from "./adapters/automation-executor.js";
 export { CursorApiError, isTerminalRunStatus, isActiveRunStatus } from "./adapters/cursor-errors.js";
-export { HeuristicReviewer, OpenAIReviewer, createReviewerFromEnv } from "./adapters/openai-reviewer.js";
+export {
+  HeuristicReviewer,
+  FailClosedReviewer,
+  OpenAIReviewer,
+  createReviewerFromEnv,
+} from "./adapters/openai-reviewer.js";
+export {
+  buildGitHubReviewEvidence,
+  formatGitHubEvidenceForReviewer,
+  testSummaryFromChecks,
+} from "./review/evidence.js";
+export {
+  buildRemediationOrder,
+  formatRemediationOrderMarkdown,
+} from "./review/remediation-order.js";
 export {
   HttpGitHubAdapter,
   UnconfiguredGitHubAdapter,
@@ -52,6 +66,16 @@ export {
   resolvePersistenceTier,
   isProductionLike,
 } from "./config/production-guards.js";
+export {
+  buildPostgresConnectionString,
+  resolveDatabaseUrlFromEnv,
+  ensureDatabaseUrlEnv,
+} from "./config/database-url.js";
+export {
+  PostgresTaskRepository,
+  HydratingMemoryStore,
+  createIngressTaskStoreFromEnv,
+} from "./db/postgres-task-store.js";
 export {
   MemoryOneShotDispatchGate,
   FileOneShotDispatchGate,

@@ -343,6 +343,7 @@ describe("Prompt-injection boundary", () => {
           state: "open",
           draft: true,
           headSha: "abc",
+        baseSha: "basedef",
         };
       },
       async listPullRequestFiles() {

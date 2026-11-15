@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   HeuristicReviewer,
+  FailClosedReviewer,
   OpenAIReviewer,
   createReviewerFromEnv,
   resolveOpenAIModel,
 } from "../src/adapters/openai-reviewer.js";
 import type OpenAI from "openai";
+import { buildGitHubReviewEvidence } from "../src/review/evidence.js";
 
 describe("HeuristicReviewer", () => {
   it("rejects planted failure marker", async () => {
@@ -34,6 +36,21 @@ describe("HeuristicReviewer", () => {
   });
 });
 
+describe("FailClosedReviewer", () => {
+  it("never returns ACCEPT", async () => {
+    const reviewer = new FailClosedReviewer("OPENAI_API_KEY missing in live mode");
+    const result = await reviewer.review({
+      taskTitle: "t",
+      acceptanceCriteria: ["a"],
+      prompt: "p",
+      agentResult: "looks fine",
+      testSummary: { commands: ["npm test"], exitCodes: [0], notes: "green" },
+    });
+    expect(result.decision).toBe("BLOCKED");
+    expect(result.decision).not.toBe("ACCEPT");
+  });
+});
+
 describe("createReviewerFromEnv", () => {
   it("uses heuristic outside live mode even when key present", () => {
     const reviewer = createReviewerFromEnv({
@@ -53,10 +70,28 @@ describe("createReviewerFromEnv", () => {
     expect(reviewer).toBeInstanceOf(OpenAIReviewer);
   });
 
-  it("falls back to heuristic in live mode without key", () => {
+  it("fail-closes in live mode without key — never Heuristic ACCEPT path", async () => {
     const reviewer = createReviewerFromEnv({
       NADS_MODE: "live",
       OPENAI_API_KEY: "",
+    });
+    expect(reviewer).toBeInstanceOf(FailClosedReviewer);
+    const result = await reviewer.review({
+      taskTitle: "t",
+      acceptanceCriteria: ["ship it"],
+      prompt: "p",
+      agentResult: "all good",
+      testSummary: { commands: ["npm test"], exitCodes: [0], notes: "" },
+    });
+    expect(result.decision).toBe("BLOCKED");
+    expect(result.decision).not.toBe("ACCEPT");
+  });
+
+  it("allows explicit heuristic override for tests only", () => {
+    const reviewer = createReviewerFromEnv({
+      NADS_MODE: "live",
+      OPENAI_API_KEY: "",
+      NADS_ALLOW_HEURISTIC_REVIEWER: "true",
     });
     expect(reviewer).toBeInstanceOf(HeuristicReviewer);
   });
@@ -118,34 +153,82 @@ describe("OpenAIReviewer (mocked SDK client)", () => {
     });
 
     expect(result.decision).toBe("REJECT");
-    expect(parse).toHaveBeenCalledTimes(1);
-    const callArg = parse.mock.calls[0]?.[0] as { model?: string };
-    expect(callArg.model).toBe("gpt-4o-mini");
+    expect(parse).toHaveBeenCalledOnce();
   });
 
-  it("surfaces refusal without retry", async () => {
-    const parse = vi.fn().mockResolvedValue({
-      choices: [{ message: { parsed: null, refusal: "policy", content: null } }],
-    });
+  it("blocks ACCEPT when GitHub evidence is incomplete", async () => {
+    const parse = vi.fn();
     const client = {
       chat: { completions: { parse } },
     } as unknown as OpenAI;
-
     const reviewer = new OpenAIReviewer({
       apiKey: "unused",
       model: "gpt-4o-mini",
       client,
     });
+    const evidence = buildGitHubReviewEvidence({
+      owner: "o",
+      repo: "r",
+      prNumber: 1,
+      headSha: null,
+      baseSha: null,
+      files: [],
+      checks: [],
+      acceptanceCriteria: ["a"],
+    });
+    expect(evidence.complete).toBe(false);
+    const result = await reviewer.review({
+      taskTitle: "t",
+      acceptanceCriteria: ["a"],
+      prompt: "p",
+      agentResult: "untrusted claim of success",
+      testSummary: { commands: [], exitCodes: [], notes: "" },
+      githubEvidence: evidence,
+    });
+    expect(result.decision).toBe("BLOCKED");
+    expect(parse).not.toHaveBeenCalled();
+  });
 
-    await expect(
-      reviewer.review({
-        taskTitle: "mock",
-        acceptanceCriteria: [],
-        prompt: "p",
-        agentResult: "x",
-        testSummary: { commands: [], exitCodes: [], notes: "" },
-      }),
-    ).rejects.toThrow(/refused/);
-    expect(parse).toHaveBeenCalledTimes(1);
+  it("maps API errors to BLOCKED — never ACCEPT", async () => {
+    const parse = vi.fn().mockRejectedValue(new Error("network down"));
+    const client = {
+      chat: { completions: { parse } },
+    } as unknown as OpenAI;
+    const reviewer = new OpenAIReviewer({
+      apiKey: "unused",
+      model: "gpt-4o-mini",
+      client,
+    });
+    const evidence = buildGitHubReviewEvidence({
+      owner: "o",
+      repo: "r",
+      prNumber: 1,
+      prUrl: "https://github.com/o/r/pull/1",
+      headRef: "feat",
+      baseRef: "main",
+      headSha: "h".repeat(40),
+      baseSha: "b".repeat(40),
+      files: [
+        {
+          filename: "a.ts",
+          status: "modified",
+          additions: 1,
+          deletions: 0,
+          patch: "@@\n+ok\n",
+        },
+      ],
+      checks: [{ name: "npm test", conclusion: "success" }],
+      acceptanceCriteria: ["works"],
+    });
+    const result = await reviewer.review({
+      taskTitle: "t",
+      acceptanceCriteria: ["works"],
+      prompt: "p",
+      agentResult: "done",
+      testSummary: { commands: ["npm test"], exitCodes: [0], notes: "ok" },
+      githubEvidence: evidence,
+    });
+    expect(result.decision).toBe("BLOCKED");
+    expect(result.summary).toMatch(/unavailable/i);
   });
 });

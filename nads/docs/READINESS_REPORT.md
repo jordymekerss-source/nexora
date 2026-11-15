@@ -34,7 +34,7 @@ Controlled live Automation is blocked only by account/host configuration that ca
 ## D. Manual steps remaining
 
 1. Create Cursor Automation + paste `docs/AUTOMATION_INSTRUCTIONS.md`
-2. Provision host Postgres; apply migrations 001–004
+2. Provision host Postgres; apply migrations 001–005
 3. Configure secrets (webhook URL/key, GitHub, DATABASE_URL)
 4. HTTPS reverse proxy + GitHub webhook registration
 5. Staging: enable ingress receive-only, then one controlled send

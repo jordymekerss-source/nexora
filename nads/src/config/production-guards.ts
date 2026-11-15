@@ -3,6 +3,8 @@
  * Never silently accept memory/file persistence when production is requested.
  */
 
+import { resolveDatabaseUrlFromEnv } from "./database-url.js";
+
 export type PersistenceSafetyTier = {
   receipts: "memory" | "file" | "postgres";
   dispatchState: "memory" | "file" | "postgres";
@@ -82,13 +84,42 @@ export function assertProductionPersistenceConfig(
       "Production/multi-instance NADS requires NADS_DISPATCH_STATE_STORE=postgres (or inherit via receipt store) and DATABASE_URL",
     );
   }
-  if (!env.DATABASE_URL?.trim()) {
-    throw new Error("Production NADS requires DATABASE_URL — refusing silent memory fallback");
+  if (!resolveDatabaseUrlFromEnv(env)) {
+    throw new Error(
+      "Production NADS requires DATABASE_URL or POSTGRES_PASSWORD — refusing silent memory fallback",
+    );
   }
   if ((env.NADS_EXECUTOR ?? "mock").toLowerCase() === "cursor") {
     throw new Error(
       "Production activation path refuses NADS_EXECUTOR=cursor — Automation webhook only (no /v1/agents)",
     );
   }
+
+  // Live Automation send: require single-task mode + postgres one-shot gate (fail closed).
+  if ((env.NADS_AUTOMATION_ENABLED ?? "").toLowerCase() === "true") {
+    if ((env.NADS_SINGLE_TASK_MODE ?? "false").toLowerCase() !== "true") {
+      throw new Error(
+        "NADS_AUTOMATION_ENABLED=true requires NADS_SINGLE_TASK_MODE=true — refusing unbounded send",
+      );
+    }
+    if (!env.NADS_APPROVED_TASK_ID?.trim()) {
+      throw new Error(
+        "NADS_AUTOMATION_ENABLED=true requires NADS_APPROVED_TASK_ID — refusing unbounded send",
+      );
+    }
+    const gateStore = (
+      env.NADS_ONE_SHOT_GATE_STORE ??
+      env.NADS_WEBHOOK_RECEIPT_STORE ??
+      "memory"
+    )
+      .trim()
+      .toLowerCase();
+    if (gateStore !== "postgres" && gateStore !== "pg") {
+      throw new Error(
+        "NADS_AUTOMATION_ENABLED=true requires NADS_ONE_SHOT_GATE_STORE=postgres — refusing memory/file gate",
+      );
+    }
+  }
+
   return tiers;
 }

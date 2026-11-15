@@ -32,6 +32,11 @@ export type DevelopmentTask = {
   dispatchOutcome?: string;
   dispatchUncertain?: boolean;
   dispatchReconcileToken?: string;
+  /** Last independent REJECT remediation (for repair dispatch). */
+  lastRejectionSummary?: string;
+  lastRequiredChanges?: string[];
+  lastRemediationOrder?: string;
+  lastReviewedHeadSha?: string;
 };
 
 export type DevelopmentEvent = {
@@ -78,7 +83,7 @@ export class MemoryStore {
     maxConcurrentAgents: 1,
   };
 
-  constructor(projectId = randomUUID(), receipts?: WebhookReceiptStore) {
+  constructor(projectId: string = randomUUID(), receipts?: WebhookReceiptStore) {
     this.projectId = projectId;
     this.receipts = receipts ?? new MemoryWebhookReceiptStore();
   }

@@ -89,7 +89,7 @@ Never commit real values. `.env.example` holds names only.
 
 ## Remaining manual steps (host not connected here)
 
-1. Provision Postgres + apply migrations 001–004.
+1. Provision Postgres + apply migrations 001–005.
 2. Create Cursor Automation; paste instructions from `AUTOMATION_INSTRUCTIONS.md`.
 3. Configure secrets on the host.
 4. Point GitHub webhook to `https://<host>/webhooks/github`.

@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import pg, { type Pool } from "pg";
+import { resolveDatabaseUrlFromEnv } from "../config/database-url.js";
 
 /**
  * Durable Automation dispatch state (uncertain / reconcile / correlation binding).
@@ -306,10 +307,10 @@ export function createDispatchStateStoreFromEnv(
     .trim()
     .toLowerCase();
   if (mode === "postgres" || mode === "pg") {
-    const url = env.DATABASE_URL?.trim();
+    const url = resolveDatabaseUrlFromEnv(env)?.trim();
     if (!url) {
       throw new Error(
-        "NADS_DISPATCH_STATE_STORE=postgres requires DATABASE_URL — refusing silent memory fallback",
+        "NADS_DISPATCH_STATE_STORE=postgres requires DATABASE_URL or POSTGRES_PASSWORD — refusing silent memory fallback",
       );
     }
     return PostgresDispatchStateStore.fromConnectionString(url);

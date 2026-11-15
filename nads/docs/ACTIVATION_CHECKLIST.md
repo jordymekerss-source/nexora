@@ -12,7 +12,7 @@ Do **not** flip these gates until each row is verified.
 
 ## Before first receive-only ingress
 
-1. [ ] Postgres provisioned; migrations 001–004 applied
+1. [ ] Postgres provisioned; migrations 001–005 applied
 2. [ ] `NADS_WEBHOOK_RECEIPT_STORE=postgres`
 3. [ ] `NADS_DISPATCH_STATE_STORE=postgres`
 4. [ ] `NADS_REQUIRE_PG_RECEIPTS=true` (or `NADS_PRODUCTION=true`)

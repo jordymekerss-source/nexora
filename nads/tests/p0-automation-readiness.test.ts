@@ -86,6 +86,7 @@ function mockGithub(taskId: string): GitHubAdapter {
         state: "open",
         draft: true,
         headSha: "abc",
+        baseSha: "basedef",
       };
     },
     async listPullRequestFiles() {
@@ -444,7 +445,9 @@ describe("P0 HTTP ingress", () => {
 
     const health = await fetch(`${base}/health`);
     expect(health.status).toBe(200);
-    expect((await health.json()).ok).toBe(true);
+    const healthJson = (await health.json()) as { ok: boolean; automationSend: boolean };
+    expect(healthJson.ok).toBe(true);
+    expect(healthJson.automationSend).toBe(false);
 
     const bad = await fetch(`${base}/webhooks/github`, {
       method: "POST",
@@ -514,14 +517,34 @@ describe("P0 HTTP ingress", () => {
     expect(first.status).toBe(200);
     expect((await first.json()).handled).toBe(true);
 
+    // Same-process: in-memory seenDeliveryIds → HTTP 409 replay (fast path).
     const second = await fetch(`${base}/webhooks/github`, { method: "POST", headers, body });
-    expect(second.status).toBe(200);
-    const secondJson = (await second.json()) as { handled: boolean; reason: string };
-    expect(secondJson.handled).toBe(false);
-    expect(secondJson.reason).toBe("duplicate_delivery");
+    expect(second.status).toBe(409);
+    expect((await second.json()).error).toBe("replay");
 
+    // Cross-process / durable path: fresh server + shared receipt store → 200 duplicate_delivery.
     await new Promise<void>((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),
+    );
+    const server2 = createNadsIngressServer({
+      store,
+      github: mockGithub(task.id),
+      reviewer: new HeuristicReviewer(),
+      receipts,
+      githubWebhookSecret: "whsec",
+    });
+    await new Promise<void>((resolve) => server2.listen(0, "127.0.0.1", () => resolve()));
+    const address2 = server2.address();
+    if (!address2 || typeof address2 === "string") throw new Error("no port");
+    const base2 = `http://127.0.0.1:${address2.port}`;
+    const third = await fetch(`${base2}/webhooks/github`, { method: "POST", headers, body });
+    expect(third.status).toBe(200);
+    const thirdJson = (await third.json()) as { handled: boolean; reason: string };
+    expect(thirdJson.handled).toBe(false);
+    expect(thirdJson.reason).toBe("duplicate_delivery");
+
+    await new Promise<void>((resolve, reject) =>
+      server2.close((err) => (err ? reject(err) : resolve())),
     );
   });
 });

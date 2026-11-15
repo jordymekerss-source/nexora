@@ -49,7 +49,13 @@ services:
       NADS_REQUIRE_PG_RECEIPTS: "true"
       NADS_INGRESS_HOST: "0.0.0.0"
       NADS_INGRESS_PORT: "8787"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-nads}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nads}
+      # Pass DB parts for entrypoint percent-encoding. Do NOT interpolate raw password into DATABASE_URL here.
+      # Optional override: set DATABASE_URL in env_file (must already be percent-encoded); entrypoint preserves it.
+      POSTGRES_USER: ${POSTGRES_USER:-nads}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-nads}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
       # Optional Automation credentials until configured (empty = send still fail-closed when enabled)
       NADS_AUTOMATION_WEBHOOK_URL: ${NADS_AUTOMATION_WEBHOOK_URL:-}
       NADS_AUTOMATION_WEBHOOK_KEY: ${NADS_AUTOMATION_WEBHOOK_KEY:-}
@@ -58,6 +64,7 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:?GITHUB_TOKEN is required}
       GITHUB_REPO: ${GITHUB_REPO:-jordymekerss-source/nexora}
       NADS_REPO_URL: ${NADS_REPO_URL:-https://github.com/jordymekerss-source/nexora}
+      NADS_PROJECT_ID: ${NADS_PROJECT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       NADS_OPENAI_MODEL: ${NADS_OPENAI_MODEL:-gpt-4o-mini}
       NADS_MODE: ${NADS_MODE:-live}
@@ -68,13 +75,13 @@ services:
       # Host loopback only — never publish 8787 on a public interface.
       - "127.0.0.1:8787:8787"
     healthcheck:
-      # node:22-bookworm-slim has no curl; use built-in fetch against loopback.
+      # Prefer /ready (Postgres ping). Falls back to process liveness via /health only if ready is down during start.
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:8787/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:8787/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 10s
       timeout: 5s

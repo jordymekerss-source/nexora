@@ -10,7 +10,11 @@ import {
   completeAutomationTaskFromGitHub,
 } from "../orchestrator/automation-lifecycle.js";
 import { verifyAutomationCallback, AutomationCallbackError } from "./automation-callback.js";
-import { verifyGitHubWebhookSignature, GitHubWebhookError } from "./github-webhook.js";
+import {
+  verifyGitHubWebhookSignature,
+  GitHubWebhookError,
+  markGitHubDeliverySeen,
+} from "./github-webhook.js";
 
 export type NadsIngressOptions = {
   store: MemoryStore;
@@ -23,6 +27,11 @@ export type NadsIngressOptions = {
   automationCallbackSecret?: string;
   maxBodyBytes?: number;
   readyCheck?: () => boolean | Promise<boolean>;
+  /**
+   * Reflects NADS_AUTOMATION_ENABLED — must not be hardcoded false.
+   * Durable send gate remains the executor; this is an ops signal only.
+   */
+  automationSendEnabled?: boolean;
   /**
    * Simple in-process rate limit (requests per window).
    * Production should also enforce limits at the reverse proxy.
@@ -115,9 +124,15 @@ class SlidingWindowRateLimiter {
  * Production-oriented NADS ingress (HTTP).
  * Terminate TLS at the reverse proxy / platform edge; this server expects raw bodies.
  * Does not dispatch Automations or call /v1/agents.
+ *
+ * Delivery dedupe: in-process seenDeliveryIds/seenCallbackIds yield HTTP 409 replay (same process).
+ * Durable multi-instance dedupe is Postgres receipt tryClaim → HTTP 200 + duplicate_delivery.
  */
 export function createNadsIngressServer(options: NadsIngressOptions): Server {
   const maxBodyBytes = options.maxBodyBytes ?? 1_048_576;
+  const automationSend = options.automationSendEnabled === true;
+  const seenDeliveryIds = new Set<string>();
+  const seenCallbackIds = new Set<string>();
   const rateLimiter =
     options.rateLimitPerWindow && options.rateLimitPerWindow > 0
       ? new SlidingWindowRateLimiter(
@@ -132,12 +147,23 @@ export function createNadsIngressServer(options: NadsIngressOptions): Server {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
 
       if (method === "GET" && url.pathname === "/health") {
-        sendJson(res, 200, { ok: true, service: "nads-ingress", automationSend: false });
+        sendJson(res, 200, {
+          ok: true,
+          service: "nads-ingress",
+          automationSend,
+        });
         return;
       }
 
       if (method === "GET" && url.pathname === "/ready") {
-        const ready = options.readyCheck ? await options.readyCheck() : true;
+        let ready = true;
+        if (options.readyCheck) {
+          try {
+            ready = Boolean(await options.readyCheck());
+          } catch {
+            ready = false;
+          }
+        }
         sendJson(res, ready ? 200 : 503, { ok: ready, service: "nads-ingress" });
         return;
       }
@@ -165,7 +191,9 @@ export function createNadsIngressServer(options: NadsIngressOptions): Server {
         try {
           const verified = verifyGitHubWebhookSignature(raw.body, headerMap(req), {
             secret: options.githubWebhookSecret,
+            seenDeliveryIds,
           });
+          markGitHubDeliverySeen(seenDeliveryIds, verified.deliveryId);
           const outcome = await completeAutomationTaskFromGitHub({
             store: options.store,
             reviewer: options.reviewer,
@@ -212,6 +240,7 @@ export function createNadsIngressServer(options: NadsIngressOptions): Server {
         try {
           const callback = verifyAutomationCallback(raw.body.toString("utf8"), headerMap(req), {
             secret,
+            seenIds: seenCallbackIds,
           });
           const outcome = await completeAutomationTaskFromCallback({
             store: options.store,

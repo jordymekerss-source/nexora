@@ -27,6 +27,9 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY db ./db
 COPY docs ./docs
+COPY scripts/docker-entrypoint.mjs ./scripts/docker-entrypoint.mjs
 EXPOSE 8787
+# Builds percent-encoded DATABASE_URL from POSTGRES_* when unset; preserves explicit DATABASE_URL.
+ENTRYPOINT ["node", "scripts/docker-entrypoint.mjs"]
 # Default: print readiness (safe). Hetzner compose overrides to ingress-serve.
 CMD ["node", "dist/cli.js", "readiness-status"]
