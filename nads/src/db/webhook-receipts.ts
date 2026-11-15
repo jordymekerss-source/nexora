@@ -92,6 +92,22 @@ export interface WebhookReceiptStore {
   ): Promise<AcquireCompletionLeaseResult>;
   releaseCompletionLease(input: ReleaseCompletionLeaseInput): Promise<boolean>;
   finalizeCompletionLease(input: FinalizeCompletionLeaseInput): Promise<boolean>;
+  /**
+   * Crash recovery: task already terminal but lease still `leased` (settle lost).
+   * Marks the lease completed regardless of owner so it cannot stick forever.
+   */
+  reconcileLeaseForTerminalTask?(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean>;
+  /**
+   * Crash recovery: lease marked `completed` but task never reached terminal
+   * (legacy finalize-before-persist). Marks lease failed so another worker can reclaim.
+   */
+  reclaimOrphanCompletedLease?(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean>;
   recoverExpiredLeases(options?: { now?: Date; projectId?: string }): Promise<number>;
   has(provider: WebhookProvider, deliveryId: string, projectId: string): Promise<boolean>;
   list(projectId: string): Promise<WebhookReceipt[]>;
@@ -201,6 +217,31 @@ export class MemoryWebhookReceiptStore implements WebhookReceiptStore {
     if (!existing || existing.leaseOwner !== input.leaseOwner) return false;
     if (existing.status !== "leased") return false;
     existing.status = "completed";
+    this.leases.set(key, existing);
+    return true;
+  }
+
+  async reconcileLeaseForTerminalTask(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    const key = leaseKey(input.projectId, input.taskId);
+    const existing = this.leases.get(key);
+    if (!existing || existing.status !== "leased") return false;
+    existing.status = "completed";
+    this.leases.set(key, existing);
+    return true;
+  }
+
+  async reclaimOrphanCompletedLease(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    const key = leaseKey(input.projectId, input.taskId);
+    const existing = this.leases.get(key);
+    if (!existing || existing.status !== "completed") return false;
+    existing.status = "failed";
+    existing.failureReason = "orphan_completed_lease_non_terminal_task";
     this.leases.set(key, existing);
     return true;
   }
@@ -374,6 +415,39 @@ export class FileWebhookReceiptStore implements WebhookReceiptStore {
         return false;
       }
       existing.status = "completed";
+      this.snapshot.leases[key] = existing;
+      await this.flush();
+      return true;
+    });
+  }
+
+  async reconcileLeaseForTerminalTask(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    return this.enqueue(async () => {
+      await this.ensureLoaded();
+      const key = leaseKey(input.projectId, input.taskId);
+      const existing = this.snapshot.leases[key];
+      if (!existing || existing.status !== "leased") return false;
+      existing.status = "completed";
+      this.snapshot.leases[key] = existing;
+      await this.flush();
+      return true;
+    });
+  }
+
+  async reclaimOrphanCompletedLease(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    return this.enqueue(async () => {
+      await this.ensureLoaded();
+      const key = leaseKey(input.projectId, input.taskId);
+      const existing = this.snapshot.leases[key];
+      if (!existing || existing.status !== "completed") return false;
+      existing.status = "failed";
+      existing.failureReason = "orphan_completed_lease_non_terminal_task";
       this.snapshot.leases[key] = existing;
       await this.flush();
       return true;
@@ -658,6 +732,53 @@ export class PostgresWebhookReceiptStore implements WebhookReceiptStore {
               and lease_owner = $3
               and status = 'leased'`,
           [input.taskId, input.projectId, input.leaseOwner],
+        );
+        return (result.rowCount ?? 0) > 0;
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  async reconcileLeaseForTerminalTask(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    try {
+      return await this.withClient(async (client) => {
+        const result = await client.query(
+          `update task_completion_claims
+              set status = 'completed',
+                  completed_at = coalesce(completed_at, now()),
+                  updated_at = now(),
+                  failure_reason = null
+            where task_id = $1::uuid
+              and project_id = $2::uuid
+              and status = 'leased'`,
+          [input.taskId, input.projectId],
+        );
+        return (result.rowCount ?? 0) > 0;
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  async reclaimOrphanCompletedLease(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    try {
+      return await this.withClient(async (client) => {
+        const result = await client.query(
+          `update task_completion_claims
+              set status = 'failed',
+                  failure_reason = 'orphan_completed_lease_non_terminal_task',
+                  updated_at = now()
+            where project_id = $1::uuid
+              and task_id = $2::uuid
+              and status = 'completed'`,
+          [input.projectId, input.taskId],
         );
         return (result.rowCount ?? 0) > 0;
       });

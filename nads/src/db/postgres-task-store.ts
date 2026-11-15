@@ -17,6 +17,15 @@ const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set([
   "STOPPED",
 ]);
 
+export function isTerminalTaskStatus(status: TaskStatus): boolean {
+  return TERMINAL_STATUSES.has(status);
+}
+
+/** Lease settlement performed in the same transaction as a task CAS persist. */
+export type LeaseSettlement =
+  | { action: "finalize"; leaseOwner: string }
+  | { action: "release"; leaseOwner: string; reason: string };
+
 function asTaskStatus(value: string): TaskStatus {
   if ((TASK_STATUSES as readonly string[]).includes(value)) {
     return value as TaskStatus;
@@ -175,10 +184,14 @@ export class PostgresTaskRepository {
 
   /**
    * Persist task snapshot with compare-and-swap on row_version.
-   * On conflict throws TaskConcurrencyConflictError — callers must not silently retry
-   * in a way that could re-dispatch Automation.
+   * Optional leaseSettlement updates task_completion_claims in the SAME transaction
+   * so a crash cannot finalize/release a lease without a durable task decision
+   * (and vice versa for Postgres-backed leases).
    */
-  async persistTaskSnapshot(task: DevelopmentTask): Promise<{ rowVersion: number }> {
+  async persistTaskSnapshot(
+    task: DevelopmentTask,
+    options?: { leaseSettlement?: LeaseSettlement },
+  ): Promise<{ rowVersion: number; leaseSettledInTxn: boolean }> {
     const expectedVersion = Number(task.rowVersion ?? 0);
     const client = await this.pool.connect();
     let started = false;
@@ -307,9 +320,40 @@ export class PostgresTaskRepository {
           ],
         );
       }
+
+      let leaseSettledInTxn = false;
+      const settlement = options?.leaseSettlement;
+      if (settlement) {
+        if (settlement.action === "finalize") {
+          const leaseResult = await client.query(
+            `update task_completion_claims
+                set status = 'completed',
+                    completed_at = now(),
+                    updated_at = now(),
+                    failure_reason = null
+              where task_id = $1::uuid
+                and project_id = $2::uuid
+                and lease_owner = $3
+                and status = 'leased'`,
+            [task.id, task.projectId, settlement.leaseOwner],
+          );
+          leaseSettledInTxn = (leaseResult.rowCount ?? 0) > 0;
+        } else {
+          const leaseResult = await client.query(
+            `delete from task_completion_claims
+              where task_id = $1::uuid
+                and project_id = $2::uuid
+                and lease_owner = $3
+                and status = 'leased'`,
+            [task.id, task.projectId, settlement.leaseOwner],
+          );
+          leaseSettledInTxn = (leaseResult.rowCount ?? 0) > 0;
+        }
+      }
+
       await client.query("commit");
       started = false;
-      return { rowVersion: newVersion };
+      return { rowVersion: newVersion, leaseSettledInTxn };
     } catch (error) {
       if (started) {
         try {
@@ -322,6 +366,29 @@ export class PostgresTaskRepository {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * If a lease was marked completed but the task never reached a terminal status
+   * (legacy crash window), mark the lease failed so another worker can reclaim it.
+   */
+  async reclaimOrphanCompletedLease(input: {
+    projectId: string;
+    taskId: string;
+  }): Promise<boolean> {
+    const task = await this.loadTask(input.taskId);
+    if (!task || isTerminalTaskStatus(task.status)) return false;
+    const result = await this.pool.query(
+      `update task_completion_claims
+          set status = 'failed',
+              failure_reason = 'orphan_completed_lease_non_terminal_task',
+              updated_at = now()
+        where project_id = $1::uuid
+          and task_id = $2::uuid
+          and status = 'completed'`,
+      [input.projectId, input.taskId],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async loadLatestRemediation(
@@ -433,16 +500,25 @@ export class HydratingMemoryStore extends MemoryStore {
     return existing;
   }
 
-  async persistTask(taskId: string): Promise<void> {
+  /**
+   * Persist task with CAS. When leaseSettlement is provided it is applied in the
+   * same Postgres transaction as the task write.
+   */
+  async persistTask(
+    taskId: string,
+    options?: { leaseSettlement?: LeaseSettlement },
+  ): Promise<{ rowVersion: number; leaseSettledInTxn: boolean } | undefined> {
     const task = this.tasks.find((row) => row.id === taskId);
-    if (!task) return;
-    const { rowVersion } = await this.repository.persistTaskSnapshot(task);
-    task.rowVersion = rowVersion;
+    if (!task) return undefined;
+    const result = await this.repository.persistTaskSnapshot(task, options);
+    task.rowVersion = result.rowVersion;
+    return result;
   }
 
   /**
    * Refresh only rowVersion from Postgres onto the working in-memory task.
-   * Used after external writers (e.g. dispatch-state) bump the version.
+   * Dangerous if used after a writer that bumped version without refreshing status —
+   * prefer a full ensureTask() or avoid dual-writers on development_tasks.
    */
   async syncRowVersion(taskId: string): Promise<number | null> {
     const task = this.tasks.find((row) => row.id === taskId);
@@ -451,6 +527,14 @@ export class HydratingMemoryStore extends MemoryStore {
     if (!loaded) return null;
     task.rowVersion = loaded.rowVersion ?? 0;
     return task.rowVersion;
+  }
+
+  /** Crash recovery: completed lease but non-terminal task → mark lease failed. */
+  async reclaimOrphanCompletedLease(taskId: string): Promise<boolean> {
+    return this.repository.reclaimOrphanCompletedLease({
+      projectId: this.projectId,
+      taskId,
+    });
   }
 }
 

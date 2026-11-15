@@ -22,6 +22,7 @@ import {
 } from "../db/webhook-receipts.js";
 import {
   classifyDispatchStatus,
+  PostgresDispatchStateStore,
   type DispatchStateStore,
 } from "../db/dispatch-state.js";
 import {
@@ -42,13 +43,21 @@ import { buildRemediationOrder } from "../review/remediation-order.js";
 import type { CodeReviewResult } from "../review/schema.js";
 import type { PullRequestDetail, PullRequestFile, CheckConclusion } from "../adapters/github-adapter.js";
 import { assertLiveAutomationSendConfig } from "../config/production-guards.js";
-import { isTaskConcurrencyConflictError } from "../db/postgres-task-store.js";
+import {
+  isTaskConcurrencyConflictError,
+  isTerminalTaskStatus,
+  type LeaseSettlement,
+} from "../db/postgres-task-store.js";
 
 /** Optional Postgres hydration hooks used by ingress HydratingMemoryStore. */
 type HydratableTaskStore = MemoryStore & {
   ensureTask?(taskId: string): Promise<DevelopmentTask | null>;
-  persistTask?(taskId: string): Promise<void>;
+  persistTask?(
+    taskId: string,
+    options?: { leaseSettlement?: LeaseSettlement },
+  ): Promise<{ rowVersion: number; leaseSettledInTxn: boolean } | void | undefined>;
   syncRowVersion?(taskId: string): Promise<number | null>;
+  reclaimOrphanCompletedLease?(taskId: string): Promise<boolean>;
 };
 
 async function ensureTaskLoaded(
@@ -62,10 +71,65 @@ async function ensureTaskLoaded(
   return store.tasks.find((row) => row.id === taskId) ?? null;
 }
 
-async function persistTaskIfSupported(store: MemoryStore, taskId: string): Promise<void> {
+async function persistTaskIfSupported(
+  store: MemoryStore,
+  taskId: string,
+  options?: { leaseSettlement?: LeaseSettlement },
+): Promise<void> {
   const hydrating = store as HydratableTaskStore;
   if (typeof hydrating.persistTask === "function") {
-    await hydrating.persistTask(taskId);
+    await hydrating.persistTask(taskId, options);
+  }
+}
+
+/** Clear a stuck `leased` claim when the task is already terminal (settle-lost crash). */
+async function reconcileStuckLeaseIfTerminal(
+  store: MemoryStore,
+  receipts: WebhookReceiptStore,
+  task: DevelopmentTask,
+): Promise<void> {
+  if (!isTerminalTaskStatus(task.status)) return;
+  if (typeof receipts.reconcileLeaseForTerminalTask === "function") {
+    await receipts.reconcileLeaseForTerminalTask({
+      projectId: store.projectId,
+      taskId: task.id,
+    });
+  }
+}
+
+/**
+ * Persist task decision first (CAS), settle completion lease in the same Postgres
+ * transaction when supported. Never finalize/release before a durable decision.
+ *
+ * After a successful hydrating persist, also settle via `receipts` so hybrid setups
+ * (PG tasks + memory/file leases) still release the lease the worker actually holds.
+ * Postgres receipts: settle is idempotent if the TX already completed/deleted the claim.
+ */
+async function persistTaskAndSettleLease(options: {
+  store: MemoryStore;
+  receipts: WebhookReceiptStore;
+  taskId: string;
+  settlement: LeaseSettlement;
+}): Promise<void> {
+  const { store, receipts, taskId, settlement } = options;
+  const hydrating = store as HydratableTaskStore;
+  if (typeof hydrating.persistTask === "function") {
+    await hydrating.persistTask(taskId, { leaseSettlement: settlement });
+  }
+  if (settlement.action === "finalize") {
+    await receipts.finalizeCompletionLease({
+      projectId: store.projectId,
+      taskId,
+      leaseOwner: settlement.leaseOwner,
+    });
+  } else {
+    await receipts.releaseCompletionLease({
+      projectId: store.projectId,
+      taskId,
+      leaseOwner: settlement.leaseOwner,
+      reason: settlement.reason,
+      status: "released",
+    });
   }
 }
 
@@ -439,23 +503,40 @@ export async function dispatchAutomationTask(options: {
     idempotencyKey: payload.idempotencyKey,
   });
 
-  if (options.dispatchState) {
-    await options.dispatchState.save({
-      taskId: task.id,
-      projectId: task.projectId,
-      dispatchOutcome: task.dispatchOutcome ?? null,
-      dispatchUncertain: Boolean(task.dispatchUncertain),
-      dispatchReconcileToken: task.dispatchReconcileToken ?? null,
-      expectedRepoUrl: task.expectedRepoUrl ?? null,
-      expectedStartingRef: task.expectedStartingRef ?? null,
-      expectedBranchPrefix: task.expectedBranchPrefix ?? null,
-      expectedTaskMarker: task.expectedTaskMarker ?? null,
-      dispatchIdempotencyKey: task.dispatchIdempotencyKey ?? null,
-    });
-    // dispatchState.save bumps row_version — sync token only (keep working task mutations).
-    const hydrating = store as HydratableTaskStore;
-    if (typeof hydrating.syncRowVersion === "function") {
-      await hydrating.syncRowVersion(task.id);
+  const hydrating = store as HydratableTaskStore;
+  const persistsViaHydrating = typeof hydrating.persistTask === "function";
+  // PostgresDispatchStateStore writes the same development_tasks row. When the
+  // hydrating store will CAS-persist the full snapshot (including dispatch fields),
+  // skip the separate dual-write — it used to bump row_version then syncRowVersion,
+  // which let a stale worker overwrite status with a refreshed version token.
+  if (options.dispatchState && !(persistsViaHydrating && options.dispatchState instanceof PostgresDispatchStateStore)) {
+    try {
+      await options.dispatchState.save({
+        taskId: task.id,
+        projectId: task.projectId,
+        dispatchOutcome: task.dispatchOutcome ?? null,
+        dispatchUncertain: Boolean(task.dispatchUncertain),
+        dispatchReconcileToken: task.dispatchReconcileToken ?? null,
+        expectedRepoUrl: task.expectedRepoUrl ?? null,
+        expectedStartingRef: task.expectedStartingRef ?? null,
+        expectedBranchPrefix: task.expectedBranchPrefix ?? null,
+        expectedTaskMarker: task.expectedTaskMarker ?? null,
+        dispatchIdempotencyKey: task.dispatchIdempotencyKey ?? null,
+        expectedRowVersion: task.rowVersion,
+      });
+    } catch (error: unknown) {
+      if (isTaskConcurrencyConflictError(error)) {
+        return {
+          taskId: task.id,
+          sent: result.sent,
+          status: `concurrency_conflict:${error.reason}`,
+          idempotencyKey: payload.idempotencyKey,
+          executionId: result.executionId,
+          error: error.message,
+          uncertain,
+        };
+      }
+      throw error;
     }
   }
 
@@ -550,7 +631,7 @@ async function acquireCompletionLease(options: {
   payloadHash?: string | null;
   leaseTtlMs?: number;
 }): Promise<{ ok: true; leaseOwner: string } | { ok: false; reason: string }> {
-  const result = await options.receipts.tryAcquireCompletionLease({
+  const leaseInput = {
     projectId: options.store.projectId,
     taskId: options.taskId,
     provider: options.provider,
@@ -560,12 +641,48 @@ async function acquireCompletionLease(options: {
     leaseTtlMs:
       options.leaseTtlMs ??
       Number(process.env.NADS_COMPLETION_LEASE_MS ?? DEFAULT_COMPLETION_LEASE_TTL_MS),
-  });
+  };
+
+  const tryOnce = () => options.receipts.tryAcquireCompletionLease(leaseInput);
+
+  let result = await tryOnce();
   if (!result.acquired) {
+    const task = await ensureTaskLoaded(options.store, options.taskId);
+
     if (result.reason === "completed") {
+      // Legacy crash: lease finalized before task persist → reclaim and retry once.
+      if (task && !isTerminalTaskStatus(task.status)) {
+        const hydrating = options.store as HydratableTaskStore;
+        let reclaimed = false;
+        if (typeof options.receipts.reclaimOrphanCompletedLease === "function") {
+          reclaimed = await options.receipts.reclaimOrphanCompletedLease({
+            projectId: options.store.projectId,
+            taskId: options.taskId,
+          });
+        } else if (typeof hydrating.reclaimOrphanCompletedLease === "function") {
+          reclaimed = await hydrating.reclaimOrphanCompletedLease(options.taskId);
+        }
+        if (reclaimed) {
+          result = await tryOnce();
+          if (result.acquired) {
+            return { ok: true, leaseOwner: options.leaseOwner };
+          }
+        }
+      }
       return { ok: false, reason: "duplicate_completion" };
     }
+
     if (result.reason === "held") {
+      // Persist succeeded, settle lost: task terminal + lease still held → reconcile.
+      if (task && isTerminalTaskStatus(task.status)) {
+        if (typeof options.receipts.reconcileLeaseForTerminalTask === "function") {
+          await options.receipts.reconcileLeaseForTerminalTask({
+            projectId: options.store.projectId,
+            taskId: options.taskId,
+          });
+        }
+        return { ok: false, reason: "duplicate_completion" };
+      }
       return { ok: false, reason: "completion_lease_held" };
     }
     return { ok: false, reason: "receipt_store_unavailable" };
@@ -851,10 +968,13 @@ export async function completeAutomationTaskFromGitHub(options: {
   });
 
   if (task.status !== "AGENT_RUNNING" && task.status !== "TESTING" && task.status !== "REVIEWING") {
+    await reconcileStuckLeaseIfTerminal(store, receipts, task);
     return {
       taskId: task.id,
       handled: false,
-      reason: `unexpected_status_${task.status}`,
+      reason: isTerminalTaskStatus(task.status)
+        ? "duplicate_completion"
+        : `unexpected_status_${task.status}`,
       prNumber: verified.prNumber,
       prUrl: verified.prUrl,
     };
@@ -930,7 +1050,12 @@ export async function completeAutomationTaskFromGitHub(options: {
       if (pr.merged) {
         store.transition(task.id, "BLOCKED", "PR already merged — refusing ACCEPT");
         try {
-          await persistTaskIfSupported(store, task.id);
+          await persistTaskAndSettleLease({
+            store,
+            receipts,
+            taskId: task.id,
+            settlement: { action: "finalize", leaseOwner },
+          });
         } catch (error: unknown) {
           if (isTaskConcurrencyConflictError(error)) {
             await release(`concurrency_conflict:${error.reason}`);
@@ -938,11 +1063,6 @@ export async function completeAutomationTaskFromGitHub(options: {
           }
           throw error;
         }
-        await receipts.finalizeCompletionLease({
-          projectId: store.projectId,
-          taskId: task.id,
-          leaseOwner,
-        });
         return {
           taskId: task.id,
           handled: true,
@@ -1076,29 +1196,23 @@ export async function completeAutomationTaskFromGitHub(options: {
       };
     }
 
-    if (decision === "ACCEPT" || decision === "BLOCKED") {
-      await receipts.finalizeCompletionLease({
-        projectId: store.projectId,
-        taskId: task.id,
-        leaseOwner,
-      });
-    } else {
-      // REJECT → revision: release lease so a later PR can complete.
-      await receipts.releaseCompletionLease({
-        projectId: store.projectId,
-        taskId: task.id,
-        leaseOwner,
-        reason: "revision_required",
-        status: "released",
-      });
-    }
+    const settlement: LeaseSettlement =
+      decision === "ACCEPT" || decision === "BLOCKED"
+        ? { action: "finalize", leaseOwner }
+        : { action: "release", leaseOwner, reason: "revision_required" };
 
     try {
-      await persistTaskIfSupported(store, task.id);
+      await persistTaskAndSettleLease({
+        store,
+        receipts,
+        taskId: task.id,
+        settlement,
+      });
     } catch (error: unknown) {
       if (isTaskConcurrencyConflictError(error)) {
         // Do not retry — retrying could race into duplicate terminal writes.
-        // Lease already finalized/released above; report conflict explicitly.
+        // Lease remains held/leased so another worker can recover after TTL or reconcile.
+        await release(`concurrency_conflict:${error.reason}`);
         return concurrencyConflictOutcome(
           task.id,
           error,
@@ -1106,7 +1220,17 @@ export async function completeAutomationTaskFromGitHub(options: {
           task.prUrl ?? verified.prUrl,
         );
       }
-      throw error;
+      // Persist failed before lease settle (same TX on Postgres) — release lease.
+      const message =
+        error instanceof Error ? error.message.slice(0, 160) : "persist_failed";
+      await release(`persist_failed:${message}`);
+      return {
+        taskId: task.id,
+        handled: false,
+        reason: "persist_failed",
+        prNumber: task.prNumber ?? prNumber,
+        prUrl: task.prUrl ?? verified.prUrl,
+      };
     }
 
     return {
@@ -1123,15 +1247,6 @@ export async function completeAutomationTaskFromGitHub(options: {
       return concurrencyConflictOutcome(task.id, error, verified.prNumber, verified.prUrl);
     }
     const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
-    try {
-      await persistTaskIfSupported(store, task.id);
-    } catch (persistError: unknown) {
-      if (isTaskConcurrencyConflictError(persistError)) {
-        await release(`concurrency_conflict:${persistError.reason}`);
-        return concurrencyConflictOutcome(task.id, persistError, verified.prNumber, verified.prUrl);
-      }
-      // Prefer original failure reason if persist also fails non-concurrency.
-    }
     await release(`completion_failed:${message}`);
     return {
       taskId: task.id,
@@ -1191,7 +1306,14 @@ export async function completeAutomationTaskFromCallback(options: {
     return { taskId: task.id, handled: false, reason: delivery.reason };
   }
   if (task.status !== "AGENT_RUNNING" && task.status !== "TESTING" && task.status !== "REVIEWING") {
-    return { taskId: task.id, handled: false, reason: `unexpected_status_${task.status}` };
+    await reconcileStuckLeaseIfTerminal(store, receipts, task);
+    return {
+      taskId: task.id,
+      handled: false,
+      reason: isTerminalTaskStatus(task.status)
+        ? "duplicate_completion"
+        : `unexpected_status_${task.status}`,
+    };
   }
 
   const leaseOwner = options.leaseOwner ?? `worker:${randomUUID()}`;
@@ -1296,29 +1418,33 @@ export async function completeAutomationTaskFromCallback(options: {
       return { taskId: task.id, handled: false, reason: "review_failed" };
     }
 
-    if (decision === "ACCEPT" || decision === "BLOCKED") {
-      await receipts.finalizeCompletionLease({
-        projectId: store.projectId,
-        taskId: task.id,
-        leaseOwner,
-      });
-    } else {
-      await receipts.releaseCompletionLease({
-        projectId: store.projectId,
-        taskId: task.id,
-        leaseOwner,
-        reason: "revision_required",
-        status: "released",
-      });
-    }
+    const settlement: LeaseSettlement =
+      decision === "ACCEPT" || decision === "BLOCKED"
+        ? { action: "finalize", leaseOwner }
+        : { action: "release", leaseOwner, reason: "revision_required" };
 
     try {
-      await persistTaskIfSupported(store, task.id);
+      await persistTaskAndSettleLease({
+        store,
+        receipts,
+        taskId: task.id,
+        settlement,
+      });
     } catch (error: unknown) {
       if (isTaskConcurrencyConflictError(error)) {
+        await release(`concurrency_conflict:${error.reason}`);
         return concurrencyConflictOutcome(task.id, error, pr.number, pr.url);
       }
-      throw error;
+      const message =
+        error instanceof Error ? error.message.slice(0, 160) : "persist_failed";
+      await release(`persist_failed:${message}`);
+      return {
+        taskId: task.id,
+        handled: false,
+        reason: "persist_failed",
+        prNumber: pr.number,
+        prUrl: pr.url,
+      };
     }
 
     return {
@@ -1335,14 +1461,6 @@ export async function completeAutomationTaskFromCallback(options: {
       return concurrencyConflictOutcome(task.id, error, callback.prNumber, callback.prUrl);
     }
     const message = error instanceof Error ? error.message.slice(0, 200) : "completion_failed";
-    try {
-      await persistTaskIfSupported(store, task.id);
-    } catch (persistError: unknown) {
-      if (isTaskConcurrencyConflictError(persistError)) {
-        await release(`concurrency_conflict:${persistError.reason}`);
-        return concurrencyConflictOutcome(task.id, persistError, callback.prNumber, callback.prUrl);
-      }
-    }
     await release(`completion_failed:${message}`);
     return { taskId: task.id, handled: false, reason: "completion_failed" };
   }

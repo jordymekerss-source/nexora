@@ -3,6 +3,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import pg, { type Pool } from "pg";
 import { resolveDatabaseUrlFromEnv } from "../config/database-url.js";
+import { TaskConcurrencyConflictError } from "./postgres-task-store.js";
+import type { TaskStatus } from "../state-machine.js";
 
 /**
  * Durable Automation dispatch state (uncertain / reconcile / correlation binding).
@@ -24,6 +26,11 @@ export type DispatchStateRecord = {
 
 export type DispatchStateInput = Omit<DispatchStateRecord, "updatedAt"> & {
   updatedAt?: string;
+  /**
+   * Required for Postgres CAS — refuses the write when another worker already
+   * advanced development_tasks.row_version.
+   */
+  expectedRowVersion?: number;
 };
 
 export interface DispatchStateStore {
@@ -183,8 +190,37 @@ export class PostgresDispatchStateStore implements DispatchStateStore {
 
   async save(input: DispatchStateInput): Promise<void> {
     const client = await this.pool.connect();
+    let started = false;
     try {
-      await client.query(
+      await client.query("begin");
+      started = true;
+      const locked = await client.query(
+        `select status, row_version from development_tasks where id = $1::uuid for update`,
+        [input.taskId],
+      );
+      if (!locked.rowCount) {
+        throw new TaskConcurrencyConflictError({
+          taskId: input.taskId,
+          expectedVersion: Number(input.expectedRowVersion ?? 0),
+          reason: "task_not_found",
+        });
+      }
+      const row = locked.rows[0] as { status: string; row_version: string | number };
+      const actualVersion = Number(row.row_version ?? 0);
+      const actualStatus = String(row.status) as TaskStatus;
+      const expected =
+        input.expectedRowVersion == null ? actualVersion : Number(input.expectedRowVersion);
+      if (actualVersion !== expected) {
+        throw new TaskConcurrencyConflictError({
+          taskId: input.taskId,
+          expectedVersion: expected,
+          actualVersion,
+          actualStatus,
+          reason: "row_version_mismatch",
+        });
+      }
+
+      const updated = await client.query(
         `update development_tasks set
            expected_repo_url = $2,
            expected_starting_ref = $3,
@@ -196,7 +232,8 @@ export class PostgresDispatchStateStore implements DispatchStateStore {
            dispatch_reconcile_token = $9,
            row_version = row_version + 1,
            updated_at = now()
-         where id = $1::uuid`,
+         where id = $1::uuid and row_version = $10
+         returning row_version`,
         [
           input.taskId,
           input.expectedRepoUrl,
@@ -207,8 +244,29 @@ export class PostgresDispatchStateStore implements DispatchStateStore {
           input.dispatchOutcome,
           input.dispatchUncertain,
           input.dispatchReconcileToken,
+          expected,
         ],
       );
+      if (!updated.rowCount) {
+        throw new TaskConcurrencyConflictError({
+          taskId: input.taskId,
+          expectedVersion: expected,
+          actualVersion,
+          actualStatus,
+          reason: "cas_update_lost_race",
+        });
+      }
+      await client.query("commit");
+      started = false;
+    } catch (error) {
+      if (started) {
+        try {
+          await client.query("rollback");
+        } catch {
+          // connection may already be aborted
+        }
+      }
+      throw error;
     } finally {
       client.release();
     }
