@@ -6,8 +6,10 @@
 |---|---|
 | Worktree | `/root/nexora-app` |
 | Branch | `cursor/nexora-ultimate-product-v2-5233` |
+| HEAD | `c965769695bc9c0e5eeb989e91b295e64246a4d8` |
 | Base | `c2d8acb` on premium-full-build |
 | Checkpoint tag | `checkpoint/ultimate-v2-start` |
+| Draft PR | https://github.com/jordymekerss-source/nexora/compare/cursor/nexora-premium-full-build-5233...cursor/nexora-ultimate-product-v2-5233?expand=1 |
 | NADS | not touched |
 
 ## P0 delivered
@@ -29,11 +31,12 @@ npm run typecheck  # pass
 npm run lint       # pass
 npm test           # 81 pass
 PLAYWRIGHT_PORT=3004 npm run test:e2e  # 18 pass (clear .next if webpack flake)
+NEXT_PUBLIC_DEMO_MODE=true npm run build  # pass
 ```
 
 ## Next
 
-1. Draft PR → `cursor/nexora-premium-full-build-5233` (or audit branch)
+1. Open draft PR via compare URL (gh CLI has no token on this worker)
 2. Wire authorize into ops/crm_billing mutations
 3. Run SQL tests when Supabase test project exists
 4. Offline + Expo slices
