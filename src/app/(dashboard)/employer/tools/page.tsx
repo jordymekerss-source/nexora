@@ -25,8 +25,8 @@ export default async function EmployerToolsPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Gereedschap & materieel</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">Gereedschap & materieel</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Registratie van apparatuur en wie wat op de bus heeft.
         </p>
       </div>
@@ -44,18 +44,18 @@ export default async function EmployerToolsPage({ searchParams }: PageProps) {
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card className="overflow-hidden p-0">
-          <div className="divide-y divide-zinc-900">
+          <div className="divide-y divide-surface-border">
             {tools.map((tool) => (
               <div key={tool.id} className="space-y-3 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-medium text-zinc-100">{tool.name}</div>
-                    <div className="text-sm text-zinc-500">
+                    <div className="font-medium text-ink">{tool.name}</div>
+                    <div className="text-sm text-ink0">
                       {tool.serial_number ?? "geen serienr"} ·{" "}
                       {STATUS_LABEL[tool.status] ?? tool.status}
                     </div>
                   </div>
-                  <div className="text-xs text-zinc-400">
+                  <div className="text-xs text-ink-muted">
                     {tool.checked_out_to_name ?? "Op voorraad"}
                   </div>
                 </div>
@@ -99,12 +99,12 @@ export default async function EmployerToolsPage({ searchParams }: PageProps) {
             ))}
           </div>
           {tools.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-zinc-500">Nog geen gereedschap.</div>
+            <div className="px-4 py-8 text-sm text-ink0">Nog geen gereedschap.</div>
           ) : null}
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Gereedschap registreren</h2>
+          <h2 className="text-lg font-semibold text-ink">Gereedschap registreren</h2>
           <form action={createToolFormAction} className="mt-4 space-y-3">
             <Input name="name" label="Naam" required placeholder="Bosch boormachine" />
             <Input name="serial_number" label="Serienummer" required placeholder="SN-001" />

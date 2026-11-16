@@ -21,8 +21,8 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Wagenpark</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">Wagenpark</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Bedrijfsbussen, APK-datums en kilometerstand bijhouden.
         </p>
       </div>
@@ -40,24 +40,24 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card className="overflow-hidden p-0">
-          <div className="divide-y divide-zinc-900">
+          <div className="divide-y divide-surface-border">
             {vehicles.map((vehicle) => {
               const days =
                 vehicle.apk_expiry_date !== null ? daysUntil(vehicle.apk_expiry_date) : null;
               const apkTone =
                 days === null
-                  ? "text-zinc-500"
+                  ? "text-ink0"
                   : days < 0
                     ? "text-red-300"
                     : days <= 30
                       ? "text-amber-300"
-                      : "text-zinc-400";
+                      : "text-ink-muted";
               return (
                 <div key={vehicle.id} className="space-y-3 px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-medium text-zinc-100">{vehicle.license_plate}</div>
-                      <div className="text-sm text-zinc-500">{vehicle.brand_model}</div>
+                      <div className="font-medium text-ink">{vehicle.license_plate}</div>
+                      <div className="text-sm text-ink0">{vehicle.brand_model}</div>
                     </div>
                     <div className={`text-xs ${apkTone}`}>
                       {vehicle.apk_expiry_date !== null
@@ -71,7 +71,7 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
                         : "APK onbekend"}
                     </div>
                   </div>
-                  <div className="text-sm text-zinc-400">
+                  <div className="text-sm text-ink-muted">
                     {vehicle.km_status.toLocaleString("nl-NL")} km ·{" "}
                     {vehicle.assigned_user_name ?? "Niet toegewezen"}
                   </div>
@@ -107,12 +107,12 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
             })}
           </div>
           {vehicles.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-zinc-500">Nog geen voertuigen.</div>
+            <div className="px-4 py-8 text-sm text-ink0">Nog geen voertuigen.</div>
           ) : null}
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Voertuig toevoegen</h2>
+          <h2 className="text-lg font-semibold text-ink">Voertuig toevoegen</h2>
           <form action={createVehicleFormAction} className="mt-4 space-y-3">
             <Input name="license_plate" label="Kenteken" required placeholder="V-123-NX" />
             <Input name="brand_model" label="Merk / model" required placeholder="VW Transporter" />

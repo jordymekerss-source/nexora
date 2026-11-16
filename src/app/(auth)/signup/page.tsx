@@ -55,11 +55,11 @@ export default async function SignupPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
             NEXORA
           </div>
-          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Account aanmaken</h1>
-          <p className="mt-2 text-sm text-zinc-400">
+          <h1 className="mt-2 text-2xl font-semibold text-ink">Account aanmaken</h1>
+          <p className="mt-2 text-sm text-ink-muted">
             Na registratie maak je als werkgever een organisatie aan. Medewerkers worden
             alleen via een bedrijfsuitnodiging toegevoegd.
           </p>
@@ -90,7 +90,7 @@ export default async function SignupPage() {
           </form>
         </Card>
 
-        <div className="text-center text-sm text-zinc-400">
+        <div className="text-center text-sm text-ink-muted">
           Al een account?{" "}
           <Link className="font-medium text-accent hover:text-emerald-300" href="/login">
             Inloggen

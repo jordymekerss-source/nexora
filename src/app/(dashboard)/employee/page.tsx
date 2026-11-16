@@ -36,15 +36,15 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
   return (
     <div className="mx-auto max-w-lg space-y-6" data-testid="employee-mobile-view">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Inklokken</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">Inklokken</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Hallo {session.profile.full_name}. Kies een toegewezen project en start je dienst.
         </p>
       </div>
 
       {isDemoMode() ? (
         <Card className="p-4">
-          <div className="mb-2 text-xs uppercase text-zinc-500">Demo persona</div>
+          <div className="mb-2 text-xs uppercase text-ink0">Demo persona</div>
           <PersonaSwitcher current={getDemoPersonaFromCookies() ?? "employee-0"} />
         </Card>
       ) : null}
@@ -99,11 +99,11 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
               data-testid="active-shift-status"
             >
               <div className="text-xs uppercase text-accent">Status</div>
-              <div className="mt-1 text-lg font-semibold text-zinc-50">Aan het werk</div>
-              <div className="mt-1 font-medium text-zinc-200">
+              <div className="mt-1 text-lg font-semibold text-ink">Aan het werk</div>
+              <div className="mt-1 font-medium text-ink">
                 {activeProject?.title ?? "Project"}
               </div>
-              <div className="mt-1 text-sm text-zinc-400">
+              <div className="mt-1 text-sm text-ink-muted">
                 Sinds {formatDateTime(openEntry.clock_in)} ·{" "}
                 {Math.round(
                   computeWorkedMinutes({
@@ -151,11 +151,11 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
             {isDemoMode() && activeProject !== null ? (
               <form
                 action={uploadDemoProjectPhotoAction}
-                className="space-y-3 rounded-md border border-zinc-800 p-3"
+                className="space-y-3 rounded-md border border-surface-border p-3"
                 data-testid="project-photo-upload"
               >
                 <input type="hidden" name="project_id" value={activeProject.id} />
-                <div className="text-sm font-medium text-zinc-100">Foto bij actief project</div>
+                <div className="text-sm font-medium text-ink">Foto bij actief project</div>
                 <Input
                   name="photo"
                   type="file"
@@ -173,7 +173,7 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
 
             <Link
               href={`/employee/work-order?projectId=${openEntry.project_id}`}
-              className="inline-flex w-full items-center justify-center rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200"
+              className="inline-flex w-full items-center justify-center rounded-md border border-surface-border px-3 py-2 text-sm text-ink"
             >
               Digitale werkbon / handtekening
             </Link>
@@ -195,29 +195,29 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
             </Button>
           </form>
         ) : (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-ink0">
             Geen actieve toegewezen projecten. Vraag je werkgever om toewijzing.
           </p>
         )}
       </Card>
 
       <Card>
-        <h2 className="text-lg font-semibold text-zinc-100">Recente uren</h2>
-        <div className="mt-3 divide-y divide-zinc-900">
+        <h2 className="text-lg font-semibold text-ink">Recente uren</h2>
+        <div className="mt-3 divide-y divide-surface-border">
           {recentEntries.map((entry) => (
             <div key={entry.id} className="py-3 text-sm">
-              <div className="font-medium text-zinc-100">
+              <div className="font-medium text-ink">
                 {assignedProjects.find((project) => project.id === entry.project_id)?.title ??
                   entry.project_id}
               </div>
-              <div className="text-zinc-500">
+              <div className="text-ink0">
                 {formatDateTime(entry.clock_in)}
                 {entry.clock_out !== null ? ` → ${formatDateTime(entry.clock_out)}` : " (open)"}
               </div>
             </div>
           ))}
           {recentEntries.length === 0 ? (
-            <div className="py-4 text-sm text-zinc-500">Nog geen uren.</div>
+            <div className="py-4 text-sm text-ink0">Nog geen uren.</div>
           ) : null}
         </div>
       </Card>

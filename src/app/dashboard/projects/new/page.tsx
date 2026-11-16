@@ -69,12 +69,12 @@ export default async function NewProjectPage() {
       <div>
         <Link
           href="/dashboard/projects"
-          className="text-sm text-zinc-500 hover:text-zinc-300"
+          className="text-sm text-ink0 hover:text-ink-muted"
         >
           ← Back to projects
         </Link>
-        <h1 className="mt-4 text-2xl font-semibold text-zinc-50">New project</h1>
-        <p className="mt-2 text-sm text-zinc-400">Create a job site your team can clock into.</p>
+        <h1 className="mt-4 text-2xl font-semibold text-ink">New project</h1>
+        <p className="mt-2 text-sm text-ink-muted">Create a job site your team can clock into.</p>
       </div>
 
       <Card>

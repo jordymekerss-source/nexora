@@ -40,8 +40,8 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-50">Offertes</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-ink">Offertes</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             Pipeline, live BTW-berekening en omzetting naar project + factuur.
           </p>
         </div>
@@ -68,7 +68,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
               className={
                 active
                   ? "rounded-md border border-accent bg-accent/10 px-3 py-1.5 text-sm text-accent"
-                  : "rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:border-zinc-500"
+                  : "rounded-md border border-surface-border px-3 py-1.5 text-sm text-ink-muted hover:border-zinc-500"
               }
             >
               {filter.label}
@@ -80,7 +80,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-950/40 text-xs uppercase text-zinc-500">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Klant</th>
@@ -92,10 +92,10 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
                 <th className="px-4 py-3 text-right">Acties</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-surface-border">
               {filtered.map((quote) => (
-                <tr key={quote.id} className="text-zinc-300">
-                  <td className="px-4 py-3 font-medium text-zinc-100">{quote.quote_number}</td>
+                <tr key={quote.id} className="text-ink-muted">
+                  <td className="px-4 py-3 font-medium text-ink">{quote.quote_number}</td>
                   <td className="px-4 py-3">{quote.client_name}</td>
                   <td className="px-4 py-3">
                     <QuoteStatusBadge status={quote.status} />
@@ -105,7 +105,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
                   <td className="px-4 py-3 text-accent">
                     {formatEuro(Number(quote.total_amount))}
                   </td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDateTime(quote.created_at)}</td>
+                  <td className="px-4 py-3 text-ink0">{formatDateTime(quote.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     {quote.status !== "rejected" && quote.status !== "accepted" ? (
                       <form action={convertQuoteFormAction}>
@@ -113,9 +113,9 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
                         <Button type="submit">Zet om naar Project & Factuur</Button>
                       </form>
                     ) : quote.status === "accepted" ? (
-                      <span className="text-xs text-zinc-500">Omgezet</span>
+                      <span className="text-xs text-ink0">Omgezet</span>
                     ) : (
-                      <span className="text-xs text-zinc-500">—</span>
+                      <span className="text-xs text-ink0">—</span>
                     )}
                   </td>
                 </tr>
@@ -124,7 +124,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
           </table>
         </div>
         {filtered.length === 0 ? (
-          <div className="px-4 py-10 text-sm text-zinc-500">Geen offertes voor dit filter.</div>
+          <div className="px-4 py-10 text-sm text-ink0">Geen offertes voor dit filter.</div>
         ) : null}
       </Card>
     </div>

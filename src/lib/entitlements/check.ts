@@ -5,11 +5,8 @@ import {
   isFeatureKey,
   type FeatureKey,
 } from "@/lib/entitlements/features";
-import {
-  DEFAULT_ENABLED_MODULES,
-  isModuleKey,
-  type ModuleKey,
-} from "@/lib/entitlements/modules";
+import { resolveEnabledModules } from "@/lib/entitlements/resolve";
+import { isModuleKey, type ModuleKey } from "@/lib/entitlements/modules";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export class EntitlementDeniedError extends Error {
@@ -37,16 +34,7 @@ export async function listEnabledModules(tenantId: string): Promise<ReadonlySet<
     await seedDemoStoreIfEmpty(false);
     const store = await readDemoStore();
     const rows = store.moduleConfigs.filter((row) => row.tenant_id === tenantId);
-    if (rows.length === 0) {
-      return DEFAULT_ENABLED_MODULES;
-    }
-    const enabled = new Set<ModuleKey>();
-    for (const row of rows) {
-      if (row.enabled && isModuleKey(row.module_key)) {
-        enabled.add(row.module_key);
-      }
-    }
-    return enabled.size > 0 ? enabled : DEFAULT_ENABLED_MODULES;
+    return resolveEnabledModules({ rows });
   }
 
   const supabase = createSupabaseServerClient();
@@ -55,17 +43,11 @@ export async function listEnabledModules(tenantId: string): Promise<ReadonlySet<
     .select("module_key, enabled")
     .eq("tenant_id", tenantId);
 
-  if (error !== null || data === null || data.length === 0) {
-    return DEFAULT_ENABLED_MODULES;
+  if (error !== null) {
+    return resolveEnabledModules({ rows: null, loadError: true });
   }
 
-  const enabled = new Set<ModuleKey>();
-  for (const row of data) {
-    if (row.enabled && isModuleKey(row.module_key)) {
-      enabled.add(row.module_key);
-    }
-  }
-  return enabled.size > 0 ? enabled : DEFAULT_ENABLED_MODULES;
+  return resolveEnabledModules({ rows: data ?? [] });
 }
 
 export async function assertModuleEnabled(
@@ -80,7 +62,6 @@ export async function assertModuleEnabled(
 
 export async function listEnabledFeatures(tenantId: string): Promise<ReadonlySet<FeatureKey>> {
   if (isDemoMode()) {
-    // Demo: defaults only until demo store gains feature_entitlements rows.
     return DEFAULT_ENABLED_FEATURES;
   }
 
@@ -90,29 +71,35 @@ export async function listEnabledFeatures(tenantId: string): Promise<ReadonlySet
     .select("feature_key, enabled, expires_at, trial_ends_at")
     .eq("tenant_id", tenantId);
 
-  if (error !== null || data === null || data.length === 0) {
+  if (error !== null) {
+    // Fail closed on feature load errors.
+    return new Set<FeatureKey>();
+  }
+
+  if (data === null || data.length === 0) {
     return DEFAULT_ENABLED_FEATURES;
   }
 
   const now = Date.now();
   const enabled = new Set<FeatureKey>();
+  const explicitlyDisabled = new Set<string>();
+
   for (const row of data) {
-    if (!row.enabled || !isFeatureKey(row.feature_key)) {
+    if (!isFeatureKey(row.feature_key)) {
+      continue;
+    }
+    if (!row.enabled) {
+      explicitlyDisabled.add(row.feature_key);
       continue;
     }
     if (row.expires_at !== null && Date.parse(row.expires_at) < now) {
       continue;
     }
-    if (row.trial_ends_at !== null && Date.parse(row.trial_ends_at) < now && !row.enabled) {
-      continue;
-    }
     enabled.add(row.feature_key);
   }
 
-  // Merge defaults that were not explicitly disabled
   for (const key of DEFAULT_ENABLED_FEATURES) {
-    const explicit = data.find((row) => row.feature_key === key);
-    if (explicit === undefined || (explicit.enabled && isFeatureKey(key))) {
+    if (!explicitlyDisabled.has(key)) {
       enabled.add(key);
     }
   }

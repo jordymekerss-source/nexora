@@ -53,15 +53,15 @@ export function QuoteBuilderModal({ clients }: { clients: readonly ClientRow[] }
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-10">
-          <div className="w-full max-w-3xl rounded-lg border border-zinc-700 bg-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+          <div className="w-full max-w-3xl rounded-lg border border-surface-border bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-5 py-4">
               <div>
-                <h2 className="text-lg font-semibold text-zinc-50">Offerte samenstellen</h2>
-                <p className="mt-1 text-sm text-zinc-400">BTW 21% wordt direct herberekend.</p>
+                <h2 className="text-lg font-semibold text-ink">Offerte samenstellen</h2>
+                <p className="mt-1 text-sm text-ink-muted">BTW 21% wordt direct herberekend.</p>
               </div>
               <button
                 type="button"
-                className="rounded-md p-2 text-zinc-400 hover:bg-zinc-800"
+                className="rounded-md p-2 text-ink-muted hover:bg-accent-soft/60"
                 onClick={() => setOpen(false)}
                 aria-label="Sluiten"
               >
@@ -94,7 +94,7 @@ export function QuoteBuilderModal({ clients }: { clients: readonly ClientRow[] }
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-zinc-200">Regels</h3>
+                  <h3 className="text-sm font-semibold text-ink">Regels</h3>
                   <Button
                     type="button"
                     variant="secondary"
@@ -107,7 +107,7 @@ export function QuoteBuilderModal({ clients }: { clients: readonly ClientRow[] }
                 {lines.map((line) => (
                   <div
                     key={line.key}
-                    className="grid gap-3 rounded-md border border-zinc-800 bg-zinc-950/40 p-3 sm:grid-cols-[1fr_110px_130px_40px]"
+                    className="grid gap-3 rounded-md border border-surface-border bg-surface/40 p-3 sm:grid-cols-[1fr_110px_130px_40px]"
                   >
                     <Input
                       name="item_description"
@@ -153,7 +153,7 @@ export function QuoteBuilderModal({ clients }: { clients: readonly ClientRow[] }
                     <div className="flex items-end justify-end pb-1">
                       <button
                         type="button"
-                        className="rounded-md p-2 text-zinc-500 hover:text-red-300"
+                        className="rounded-md p-2 text-ink0 hover:text-red-300"
                         onClick={() =>
                           setLines((current) =>
                             current.length <= 1
@@ -170,16 +170,16 @@ export function QuoteBuilderModal({ clients }: { clients: readonly ClientRow[] }
                 ))}
               </div>
 
-              <div className="rounded-md border border-zinc-800 bg-zinc-950/50 px-4 py-3 text-sm">
-                <div className="flex justify-between text-zinc-400">
+              <div className="rounded-md border border-surface-border bg-surface/50 px-4 py-3 text-sm">
+                <div className="flex justify-between text-ink-muted">
                   <span>Subtotaal</span>
                   <span>{formatEuro(totals.exclVat)}</span>
                 </div>
-                <div className="mt-1 flex justify-between text-zinc-400">
+                <div className="mt-1 flex justify-between text-ink-muted">
                   <span>BTW 21%</span>
                   <span>{formatEuro(totals.vatAmount)}</span>
                 </div>
-                <div className="mt-2 flex justify-between border-t border-zinc-800 pt-2 font-semibold text-zinc-50">
+                <div className="mt-2 flex justify-between border-t border-surface-border pt-2 font-semibold text-ink">
                   <span>Totaal</span>
                   <span className="text-accent">{formatEuro(totals.inclVat)}</span>
                 </div>

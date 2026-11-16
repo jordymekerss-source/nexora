@@ -17,12 +17,12 @@ export function ClientFormModal() {
       </Button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-10">
-          <div className="w-full max-w-lg rounded-lg border border-zinc-700 bg-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-              <h2 className="text-lg font-semibold text-zinc-50">Nieuwe klant</h2>
+          <div className="w-full max-w-lg rounded-lg border border-surface-border bg-surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-5 py-4">
+              <h2 className="text-lg font-semibold text-ink">Nieuwe klant</h2>
               <button
                 type="button"
-                className="rounded-md p-2 text-zinc-400 hover:bg-zinc-800"
+                className="rounded-md p-2 text-ink-muted hover:bg-accent-soft/60"
                 onClick={() => setOpen(false)}
                 aria-label="Sluiten"
               >

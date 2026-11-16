@@ -29,11 +29,11 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
   return (
     <div className="space-y-6" data-testid="employer-project-overview">
       <div>
-        <Link href="/employer/projects" className="text-sm text-zinc-500 hover:text-zinc-300">
+        <Link href="/employer/projects" className="text-sm text-ink0 hover:text-ink-muted">
           ← Projecten
         </Link>
-        <h1 className="mt-3 text-2xl font-semibold text-zinc-50">{project.title}</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="mt-3 text-2xl font-semibold text-ink">{project.title}</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           {project.client_name ?? "—"} · {project.address}
         </p>
       </div>
@@ -45,11 +45,11 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
       ) : null}
 
       <Card>
-        <h2 className="text-lg font-semibold text-zinc-100">Nu actief op dit project</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-ink">Nu actief op dit project</h2>
+        <p className="mt-1 text-sm text-ink0">
           Live overzicht van medewerkers die momenteel zijn ingeklokt.
         </p>
-        <div className="mt-4 divide-y divide-zinc-900" data-testid="active-workers-list">
+        <div className="mt-4 divide-y divide-surface-border" data-testid="active-workers-list">
           {activeWorkers.map((worker) => (
             <div
               key={worker.userId}
@@ -58,8 +58,8 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
               data-worker-name={worker.fullName}
             >
               <div>
-                <div className="font-medium text-zinc-100">{worker.fullName}</div>
-                <div className="text-zinc-500">
+                <div className="font-medium text-ink">{worker.fullName}</div>
+                <div className="text-ink0">
                   Sinds {formatDateTime(worker.clockIn)}
                   {worker.notes !== null ? ` · ${worker.notes}` : ""}
                 </div>
@@ -70,21 +70,21 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
             </div>
           ))}
           {activeWorkers.length === 0 ? (
-            <div className="py-6 text-sm text-zinc-500">Niemand is nu ingeklokt.</div>
+            <div className="py-6 text-sm text-ink0">Niemand is nu ingeklokt.</div>
           ) : null}
         </div>
       </Card>
 
       <Card data-testid="project-photos-panel">
-        <h2 className="text-lg font-semibold text-zinc-100">Projectfoto&apos;s</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-ink">Projectfoto&apos;s</h2>
+        <p className="mt-1 text-sm text-ink0">
           Recent geüploade foto&apos;s van medewerkers op dit project.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {recentPhotos.map((photo) => (
             <figure
               key={photo.id}
-              className="overflow-hidden rounded-md border border-zinc-800"
+              className="overflow-hidden rounded-md border border-surface-border"
               data-testid="project-photo"
               data-photo-user={photo.fullName}
             >
@@ -94,29 +94,29 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
                 alt={photo.caption ?? `Foto van ${photo.fullName}`}
                 className="h-40 w-full object-cover"
               />
-              <figcaption className="px-3 py-2 text-xs text-zinc-400">
+              <figcaption className="px-3 py-2 text-xs text-ink-muted">
                 {photo.fullName}
                 {photo.caption !== null ? ` · ${photo.caption}` : ""}
               </figcaption>
             </figure>
           ))}
           {recentPhotos.length === 0 ? (
-            <div className="py-4 text-sm text-zinc-500 sm:col-span-2">Nog geen foto&apos;s.</div>
+            <div className="py-4 text-sm text-ink0 sm:col-span-2">Nog geen foto&apos;s.</div>
           ) : null}
         </div>
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Toegewezen team</h2>
-          <div className="mt-3 divide-y divide-zinc-900 text-sm">
+          <h2 className="text-lg font-semibold text-ink">Toegewezen team</h2>
+          <div className="mt-3 divide-y divide-surface-border text-sm">
             {assignments.map((assignment) => (
-              <div key={assignment.id} className="py-2 text-zinc-300">
+              <div key={assignment.id} className="py-2 text-ink-muted">
                 {assignment.full_name}
               </div>
             ))}
             {assignments.length === 0 ? (
-              <div className="py-4 text-zinc-500">Nog niemand toegewezen.</div>
+              <div className="py-4 text-ink0">Nog niemand toegewezen.</div>
             ) : null}
           </div>
 
@@ -138,12 +138,12 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Werkbonnen</h2>
+          <h2 className="text-lg font-semibold text-ink">Werkbonnen</h2>
           <div className="mt-3 space-y-3 text-sm">
             {workOrders.map((order) => (
-              <div key={order.id} className="rounded-md border border-zinc-800 p-3">
-                <div className="text-zinc-200">{order.work_summary}</div>
-                <div className="mt-1 text-xs text-zinc-500">
+              <div key={order.id} className="rounded-md border border-surface-border p-3">
+                <div className="text-ink">{order.work_summary}</div>
+                <div className="mt-1 text-xs text-ink0">
                   {order.completed_at !== null
                     ? `Afgerond ${formatDateTime(order.completed_at)}`
                     : "Concept"}
@@ -153,13 +153,13 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
                   <img
                     src={order.client_signature_url}
                     alt="Klant handtekening"
-                    className="mt-2 h-20 rounded border border-zinc-700 bg-white object-contain"
+                    className="mt-2 h-20 rounded border border-surface-border bg-white object-contain"
                   />
                 ) : null}
               </div>
             ))}
             {workOrders.length === 0 ? (
-              <div className="text-zinc-500">Nog geen werkbonnen.</div>
+              <div className="text-ink0">Nog geen werkbonnen.</div>
             ) : null}
           </div>
         </Card>

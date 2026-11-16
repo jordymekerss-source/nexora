@@ -49,7 +49,8 @@ const PERSONA_PROFILES: Record<DemoPersona, ProfileRow> = {
   },
 };
 
-export function parseDemoPersona(value: string | undefined): DemoPersona {
+/** Returns null for missing/invalid persona — never escalate to employer. */
+export function parseDemoPersona(value: string | undefined | null): DemoPersona | null {
   if (
     value === "employer" ||
     value === "employee-0" ||
@@ -58,10 +59,10 @@ export function parseDemoPersona(value: string | undefined): DemoPersona {
   ) {
     return value;
   }
-  return "employer";
+  return null;
 }
 
-/** Returns null when no demo session cookie is present (logged out). */
+/** Returns null when no valid demo session cookie is present (logged out). */
 export function getDemoPersonaFromCookies(): DemoPersona | null {
   const cookieStore = cookies();
   const value = cookieStore.get(DEMO_PERSONA_COOKIE)?.value;

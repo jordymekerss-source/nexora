@@ -89,17 +89,17 @@ export default async function ProjectDetailPage({ params }: PageProps) {
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/dashboard/projects" className="text-sm text-zinc-500 hover:text-zinc-300">
+        <Link href="/dashboard/projects" className="text-sm text-ink0 hover:text-ink-muted">
           ← Projects
         </Link>
-        <h1 className="mt-4 text-2xl font-semibold text-zinc-50">{typedProject.title}</h1>
-        <p className="mt-2 text-sm text-zinc-400">{typedProject.address}</p>
+        <h1 className="mt-4 text-2xl font-semibold text-ink">{typedProject.title}</h1>
+        <p className="mt-2 text-sm text-ink-muted">{typedProject.address}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs uppercase text-zinc-400">
+          <span className="rounded-full border border-surface-border px-2 py-0.5 text-xs uppercase text-ink-muted">
             {typedProject.status}
           </span>
           {typedProject.client_name !== null && typedProject.client_name.length > 0 ? (
-            <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">
+            <span className="rounded-full border border-surface-border px-2 py-0.5 text-xs text-ink-muted">
               {typedProject.client_name}
             </span>
           ) : null}
@@ -108,8 +108,8 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
       {canManage ? (
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Edit project</h2>
-          <p className="mt-1 text-sm text-zinc-500">Changes apply immediately for your tenant.</p>
+          <h2 className="text-lg font-semibold text-ink">Edit project</h2>
+          <p className="mt-1 text-sm text-ink0">Changes apply immediately for your tenant.</p>
 
           <form action={updateProjectBound} className="mt-4 space-y-4">
             <Input name="title" label="Title" required defaultValue={typedProject.title} />
@@ -135,8 +135,8 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       ) : null}
 
       <Card>
-        <h2 className="text-lg font-semibold text-zinc-100">Photos</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-ink">Photos</h2>
+        <p className="mt-1 text-sm text-ink0">
           {canUploadPhotos
             ? "Uploads are private objects; gallery uses short-lived signed URLs."
             : "Photo uploads are available to employees and employers."}
@@ -151,8 +151,8 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       </Card>
 
       <Card>
-        <h2 className="text-lg font-semibold text-zinc-100">Time entries</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-ink">Time entries</h2>
+        <p className="mt-1 text-sm text-ink0">
           {canManage
             ? "Approve entries once payroll is reviewed."
             : "You can edit pending entries until they are approved."}
@@ -160,7 +160,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-500">
+            <thead className="border-b border-surface-border text-xs uppercase text-ink0">
               <tr>
                 <th className="py-2 pr-4">Person</th>
                 <th className="py-2 pr-4">Clock in</th>
@@ -172,7 +172,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                 {canManage ? <th className="py-2 pl-4 text-right">Actions</th> : null}
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-surface-border">
               {(timeEntries ?? []).map((entry) => {
                 const person = memberMap.get(entry.user_id);
                 const label = person?.full_name ?? entry.user_id;
@@ -183,20 +183,20 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                 });
 
                 return (
-                  <tr key={entry.id} className="text-zinc-300">
+                  <tr key={entry.id} className="text-ink-muted">
                     <td className="py-3 pr-4">{label}</td>
-                    <td className="py-3 pr-4 text-zinc-400">{formatDateTime(entry.clock_in)}</td>
-                    <td className="py-3 pr-4 text-zinc-400">
+                    <td className="py-3 pr-4 text-ink-muted">{formatDateTime(entry.clock_in)}</td>
+                    <td className="py-3 pr-4 text-ink-muted">
                       {entry.clock_out === null ? "—" : formatDateTime(entry.clock_out)}
                     </td>
-                    <td className="py-3 pr-4 text-zinc-400">{entry.break_minutes}m</td>
-                    <td className="py-3 pr-4 text-zinc-200">{Math.round(worked)}m</td>
+                    <td className="py-3 pr-4 text-ink-muted">{entry.break_minutes}m</td>
+                    <td className="py-3 pr-4 text-ink">{Math.round(worked)}m</td>
                     <td className="py-3 pr-4">
-                      <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs uppercase text-zinc-400">
+                      <span className="rounded-full border border-surface-border px-2 py-0.5 text-xs uppercase text-ink-muted">
                         {entry.status}
                       </span>
                     </td>
-                    <td className="py-3 text-zinc-400">{entry.notes ?? "—"}</td>
+                    <td className="py-3 text-ink-muted">{entry.notes ?? "—"}</td>
                     {canManage ? (
                       <td className="py-3 pl-4 text-right">
                         {entry.status === "pending" ? (
@@ -218,7 +218,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             </tbody>
           </table>
           {(timeEntries ?? []).length === 0 ? (
-            <div className="py-6 text-sm text-zinc-500">No time logged for this job yet.</div>
+            <div className="py-6 text-sm text-ink0">No time logged for this job yet.</div>
           ) : null}
         </div>
       </Card>

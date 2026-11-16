@@ -28,8 +28,8 @@ export default async function EmployerClientsPage({ searchParams }: PageProps) {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-50">Klanten</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-ink">Klanten</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             CRM-overzicht voor offertes, facturen en projectcommunicatie.
           </p>
         </div>
@@ -61,13 +61,13 @@ export default async function EmployerClientsPage({ searchParams }: PageProps) {
             name="q"
             defaultValue={q}
             placeholder="Zoek op bedrijf, contact of e-mail…"
-            className="w-full rounded-md border border-zinc-700 bg-surface-elevated px-3 py-2 text-sm text-zinc-100 outline-none focus:border-accent"
+            className="w-full rounded-md border border-surface-border bg-surface-elevated px-3 py-2 text-sm text-ink outline-none focus:border-accent"
           />
         </form>
 
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-500">
+            <thead className="border-b border-surface-border text-xs uppercase text-ink0">
               <tr>
                 <th className="px-2 py-3">Bedrijf</th>
                 <th className="px-2 py-3">Contact</th>
@@ -77,22 +77,22 @@ export default async function EmployerClientsPage({ searchParams }: PageProps) {
                 <th className="px-2 py-3">Sinds</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-surface-border">
               {filtered.map((client) => (
-                <tr key={client.id} className="text-zinc-300">
-                  <td className="px-2 py-3 font-medium text-zinc-100">{client.company_name}</td>
+                <tr key={client.id} className="text-ink-muted">
+                  <td className="px-2 py-3 font-medium text-ink">{client.company_name}</td>
                   <td className="px-2 py-3">{client.contact_person ?? "—"}</td>
                   <td className="px-2 py-3">{client.email}</td>
                   <td className="px-2 py-3">{client.phone ?? "—"}</td>
                   <td className="px-2 py-3">{client.address}</td>
-                  <td className="px-2 py-3 text-zinc-500">{formatDateTime(client.created_at)}</td>
+                  <td className="px-2 py-3 text-ink0">{formatDateTime(client.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         {filtered.length === 0 ? (
-          <div className="py-8 text-sm text-zinc-500">Geen klanten gevonden.</div>
+          <div className="py-8 text-sm text-ink0">Geen klanten gevonden.</div>
         ) : null}
       </Card>
     </div>

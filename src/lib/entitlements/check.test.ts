@@ -5,6 +5,7 @@ import {
   isModuleKey,
   OPT_IN_MODULES,
 } from "@/lib/entitlements/modules";
+import { resolveEnabledModules } from "@/lib/entitlements/resolve";
 
 describe("module entitlements", () => {
   it("recognizes known module keys", () => {
@@ -30,5 +31,12 @@ describe("module entitlements", () => {
     expect(isFeatureKey("documents.upload")).toBe(true);
     expect(FEATURE_KEYS.includes("accounting.peppol")).toBe(true);
     expect(isFeatureKey("not.a.feature")).toBe(false);
+  });
+
+  it("never re-enables defaults when employer disabled all modules", () => {
+    const enabled = resolveEnabledModules({
+      rows: [{ module_key: "crm", enabled: false }],
+    });
+    expect(enabled.size).toBe(0);
   });
 });

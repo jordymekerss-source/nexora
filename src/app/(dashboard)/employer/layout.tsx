@@ -38,14 +38,14 @@ export default async function EmployerOnlyLayout({ children }: { children: React
 
   return (
     <div className="space-y-6">
-      <div className="print:hidden flex flex-wrap gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+      <div className="print:hidden flex flex-wrap gap-2 rounded-lg border border-surface-border bg-surface/40 p-2">
         {employerLinks.map((link) => {
           const Icon = link.icon;
           return (
             <Link
               key={link.href}
               href={link.href}
-              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-white"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-muted transition hover:bg-accent-soft/60 hover:text-ink"
             >
               <Icon className="h-4 w-4 text-accent" aria-hidden />
               {link.label}
@@ -54,8 +54,8 @@ export default async function EmployerOnlyLayout({ children }: { children: React
         })}
       </div>
       {isDemoMode() ? (
-        <div className="print:hidden rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+        <div className="print:hidden rounded-lg border border-surface-border bg-surface/40 p-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-ink0">
             Demo · wissel naar medewerker voor inklokken
           </div>
           <PersonaSwitcher current={getDemoPersonaFromCookies() ?? "employer"} />

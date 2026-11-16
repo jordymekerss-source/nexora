@@ -37,10 +37,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
     <div className="space-y-6">
       <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Link href="/employer/invoices" className="text-sm text-zinc-500 hover:text-zinc-300">
+          <Link href="/employer/invoices" className="text-sm text-ink0 hover:text-ink-muted">
             ← Facturen
           </Link>
-          <h1 className="mt-3 text-2xl font-semibold text-zinc-50">{invoice.invoice_number}</h1>
+          <h1 className="mt-3 text-2xl font-semibold text-ink">{invoice.invoice_number}</h1>
           <div className="mt-2">
             <InvoiceStatusBadge status={displayStatus} />
           </div>
@@ -49,7 +49,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
           <PrintButton />
           <Link
             href={`/employer/invoices/${invoice.id}/print`}
-            className="inline-flex items-center justify-center rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-zinc-500"
+            className="inline-flex items-center justify-center rounded-md border border-surface-border px-3 py-2 text-sm text-ink hover:border-zinc-500"
           >
             Printweergave
           </Link>
@@ -78,20 +78,20 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
         </div>
       ) : null}
 
-      <article className="invoice-sheet overflow-hidden rounded-lg border border-zinc-800 bg-white text-zinc-900 shadow-sm">
-        <div className="border-b border-zinc-200 bg-zinc-950 px-8 py-6 text-zinc-50">
+      <article className="invoice-sheet overflow-hidden rounded-lg border border-surface-border bg-white text-zinc-900 shadow-sm">
+        <div className="border-b border-zinc-200 bg-surface px-8 py-6 text-ink">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">
                 NEXORA
               </div>
               <div className="mt-1 text-2xl font-semibold">Business OS</div>
-              <div className="mt-2 text-sm text-zinc-300">{tenantName}</div>
+              <div className="mt-2 text-sm text-ink-muted">{tenantName}</div>
             </div>
             <div className="text-right">
-              <div className="text-sm uppercase tracking-wide text-zinc-400">Factuur</div>
+              <div className="text-sm uppercase tracking-wide text-ink-muted">Factuur</div>
               <div className="mt-1 text-xl font-semibold">{invoice.invoice_number}</div>
-              <div className="mt-2 text-sm text-zinc-400">
+              <div className="mt-2 text-sm text-ink-muted">
                 Datum: {formatDateTime(invoice.created_at)}
               </div>
             </div>
@@ -100,13 +100,13 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
 
         <div className="grid gap-8 px-8 py-8 sm:grid-cols-2">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
               Factuur aan
             </div>
             <div className="mt-2 text-base font-semibold">{invoice.client_name}</div>
           </div>
           <div className="sm:text-right">
-            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
               Betaling
             </div>
             <div className="mt-2 text-sm">
@@ -119,7 +119,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
         <div className="px-8 pb-8">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500">
+              <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-ink0">
                 <th className="py-2 pr-3">Omschrijving</th>
                 <th className="py-2 pr-3 text-right">Aantal</th>
                 <th className="py-2 pr-3 text-right">Prijs</th>

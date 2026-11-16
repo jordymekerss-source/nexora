@@ -1,32 +1,33 @@
-# SESSION_HANDOFF
+# Session Handoff — Premium Full Build
 
-**Branch:** `cursor/nexora-enterprise-phase1-5233`  
-**Updated:** 2026-11-11 00:15 Europe/Amsterdam
+## Werkmap
 
-## Resume checklist
+`/root/nexora-app` (git worktree)  
+Branch: `cursor/nexora-premium-full-build`  
+NADS niet aanwezig in deze tree — **niet** wijzigen in `/root/nexora-mvp/nads`.
 
-1. Read `docs/FOUNDATION_GATE.md`, `docs/BUILD_STATUS.md`, this file  
-2. `git status` / `git log -5`  
-3. `npm test && npm run typecheck && npm run build`  
-4. Do **not** mark ERP modules complete until live RLS is proven  
+## Basis
 
-## Done this session
+Gebaseerd op `cursor/nexora-audit-playwright-5233` @ `6a5804d`.
 
-- Foundation gate documented (live RLS still blocked)  
-- Requirements matrix + master/module specs  
-- Phase 1 DMS + accountant + outbox migration  
-- Entitlement/feature registry expansion  
-- Unit tests for upload policy, completeness, adapters  
+## Afgerond in deze sessie
 
-## Do not
+- P0 entitlements fail-closed (`resolveEnabledModules`)
+- Demo persona: invalid → null (geen employer-escalatie)
+- Demo store: geserialiseerde mutaties + atomic write + corrupt-fail
+- Time page toont medewerkernamen
+- Premium light design tokens + AppShell redesign
+- Tracker + security/UX/readiness docs
+- Extra e2e suites + Playwright fixes (Facturatie heading)
 
-- Ship fake Exact/Peppol/PSD2 integrations  
-- Claim VCA/fiscal compliance automation  
-- Auto-delete customer data without retention procedure  
-- Add large business UIs on unproven live tenancy  
+## Volgende stappen
 
-## Blockers needing operator / credentials
+1. Unit + Playwright draaien; flaky tests fixen
+2. Permissions hooks in alle kritische server actions
+3. Live Supabase adapters wanneer project beschikbaar
+4. Offline sync implementatie
+5. Draft PR naar audit/develop branch; geen merge/deploy
 
-- Supabase project to apply migrations + A/B isolation tests  
-- HTTPS / deployment secrets for demo host  
-- Next.js major upgrade decision  
+## Verboden
+
+Force-push, hard reset, NADS-wijzigingen, productie-deploy, App Store publish.

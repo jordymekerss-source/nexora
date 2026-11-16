@@ -92,7 +92,7 @@ export function SignaturePad({ projectId, projectTitle }: Props) {
       />
 
       <div>
-        <div className="mb-2 text-sm font-medium text-zinc-200">Klant handtekening</div>
+        <div className="mb-2 text-sm font-medium text-ink">Klant handtekening</div>
         <canvas
           ref={canvasRef}
           width={640}

@@ -9,18 +9,30 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-ibm-plex-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["var(--font-manrope)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["var(--font-fraunces)", "ui-serif", "Georgia", "serif"],
       },
       colors: {
         surface: {
-          DEFAULT: "#18181b",
-          elevated: "#27272a",
-          border: "#3f3f46",
+          DEFAULT: "var(--nx-bg)",
+          elevated: "var(--nx-surface)",
+          border: "var(--nx-border)",
+        },
+        ink: {
+          DEFAULT: "var(--nx-ink)",
+          muted: "var(--nx-muted)",
         },
         accent: {
-          DEFAULT: "#10b981",
-          muted: "#059669",
+          DEFAULT: "var(--nx-accent)",
+          muted: "var(--nx-accent-hover)",
+          soft: "var(--nx-accent-soft)",
         },
+      },
+      boxShadow: {
+        nx: "0 1px 2px rgba(21, 26, 24, 0.04), 0 8px 24px rgba(21, 26, 24, 0.06)",
+      },
+      borderRadius: {
+        nx: "0.75rem",
       },
     },
   },

@@ -139,10 +139,31 @@ function normalizeStore(raw: DemoStore): DemoStore {
 }
 
 let memoryCache: DemoStore | null = null;
-let writeQueue: Promise<void> = Promise.resolve();
+/** Serializes all demo mutations to prevent lost updates on concurrent RMW. */
+let mutationQueue: Promise<unknown> = Promise.resolve();
 
 async function ensureDir(): Promise<void> {
   await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
+}
+
+async function writeStoreAtomic(store: DemoStore): Promise<void> {
+  await ensureDir();
+  const payload = JSON.stringify(store, null, 2);
+  const tmpPath = `${STORE_PATH}.${process.pid}.tmp`;
+  await fs.writeFile(tmpPath, payload, "utf8");
+  await fs.rename(tmpPath, STORE_PATH);
+}
+
+function loadFromDiskOrThrow(): Promise<DemoStore> {
+  return fs.readFile(STORE_PATH, "utf8").then((raw) => {
+    try {
+      return normalizeStore(JSON.parse(raw) as DemoStore);
+    } catch (error) {
+      throw new Error(
+        `Demo store corrupt at ${STORE_PATH}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  });
 }
 
 export async function readDemoStore(): Promise<DemoStore> {
@@ -151,32 +172,51 @@ export async function readDemoStore(): Promise<DemoStore> {
   }
 
   try {
-    const raw = await fs.readFile(STORE_PATH, "utf8");
-    memoryCache = normalizeStore(JSON.parse(raw) as DemoStore);
+    memoryCache = await loadFromDiskOrThrow();
     return structuredClone(memoryCache);
-  } catch {
-    memoryCache = emptyStore();
-    await persistDemoStore(memoryCache);
-    return structuredClone(memoryCache);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      memoryCache = emptyStore();
+      await writeStoreAtomic(memoryCache);
+      return structuredClone(memoryCache);
+    }
+    // Corrupt JSON must not silently reset production-like demo data.
+    throw error instanceof Error ? error : new Error(String(error));
   }
 }
 
 export async function persistDemoStore(store: DemoStore): Promise<void> {
-  memoryCache = structuredClone(store);
-  writeQueue = writeQueue.then(async () => {
-    await ensureDir();
-    await fs.writeFile(STORE_PATH, JSON.stringify(memoryCache, null, 2), "utf8");
+  const next = structuredClone(store);
+  const op = mutationQueue.then(async () => {
+    memoryCache = next;
+    await writeStoreAtomic(memoryCache);
   });
-  await writeQueue;
+  mutationQueue = op.then(
+    () => undefined,
+    () => undefined,
+  );
+  await op;
 }
 
 export async function updateDemoStore(
   mutator: (store: DemoStore) => void,
 ): Promise<DemoStore> {
-  const store = await readDemoStore();
-  mutator(store);
-  await persistDemoStore(store);
-  return structuredClone(store);
+  const op = mutationQueue.then(async () => {
+    const base =
+      memoryCache !== null
+        ? structuredClone(memoryCache)
+        : await readDemoStore();
+    mutator(base);
+    memoryCache = structuredClone(base);
+    await writeStoreAtomic(memoryCache);
+    return structuredClone(memoryCache);
+  });
+  mutationQueue = op.then(
+    () => undefined,
+    () => undefined,
+  );
+  return op;
 }
 
 function mondayOfWeek(date = new Date()): Date {

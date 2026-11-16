@@ -17,14 +17,14 @@ async function SignedThumb({
 
   if (error !== null || data === null) {
     return (
-      <div className="flex h-40 items-center justify-center rounded-md border border-zinc-800 bg-zinc-950 text-xs text-zinc-500">
+      <div className="flex h-40 items-center justify-center rounded-md border border-surface-border bg-surface text-xs text-ink0">
         Unable to load image
       </div>
     );
   }
 
   return (
-    <div className="relative h-40 w-full overflow-hidden rounded-md border border-zinc-800 bg-black">
+    <div className="relative h-40 w-full overflow-hidden rounded-md border border-surface-border bg-black">
       <Image
         src={data.signedUrl}
         alt={alt}
@@ -39,7 +39,7 @@ async function SignedThumb({
 
 export async function ProjectPhotoGallery({ photos }: { photos: ProjectPhotoRow[] }) {
   if (photos.length === 0) {
-    return <div className="text-sm text-zinc-500">No photos yet.</div>;
+    return <div className="text-sm text-ink0">No photos yet.</div>;
   }
 
   return (
@@ -48,9 +48,9 @@ export async function ProjectPhotoGallery({ photos }: { photos: ProjectPhotoRow[
         <div key={photo.id} className="space-y-2">
           <SignedThumb path={photo.photo_url} alt={photo.caption ?? "Project photo"} />
           {photo.caption !== null && photo.caption.length > 0 ? (
-            <div className="text-sm text-zinc-300">{photo.caption}</div>
+            <div className="text-sm text-ink-muted">{photo.caption}</div>
           ) : null}
-          <div className="text-xs text-zinc-500">{formatDateTime(photo.created_at)}</div>
+          <div className="text-xs text-ink0">{formatDateTime(photo.created_at)}</div>
         </div>
       ))}
     </div>

@@ -1,49 +1,29 @@
 # BUILD_STATUS
 
-**Updated:** 2026-11-11 00:15 Europe/Amsterdam  
-**Branch:** `cursor/nexora-enterprise-phase1-5233`  
-**Baseline:** `cursor/nexora-critical-repair-5233`
+**Updated:** 2026-11-11 22:55 Europe/Amsterdam  
+**Branch:** `cursor/nexora-audit-playwright-5233`
 
-## Foundation gate
+## Completed this pass
 
-| Criterion | Status |
+- [x] Re-audit P0 against current migrations (report: `docs/CURRENT_SECURITY_AUDIT.md`)
+- [x] Fix `next_document_number` cross-tenant allocation
+- [x] Layer 3/4 permission tables + evaluators + unit tests
+- [x] Playwright suites: auth, security, CRM nav, time, core-flow
+- [x] Universal mobile / permissions / offline architecture docs
+- [x] Deployment checklist
+
+## Verification targets
+
+| Check | Expected |
 |---|---|
-| Unit tests | **PASS (41)** — includes Phase 1 upload/accountant/adapter |
-| Typecheck / build | **PASS** |
-| P0 auth metadata fix in repo | PASS (code) |
-| Live multi-tenant RLS proof | **GEBLOKKEERD** |
-| Production-ready ERP label | **NO** |
+| `npm test` | Unit PASS |
+| `npm run typecheck` | PASS |
+| `npm run test:e2e` | Demo E2E PASS (Chromium) |
+| Live Supabase RLS A≠B | GEBLOKKEERD without project |
 
-See `docs/FOUNDATION_GATE.md`.
+## Not complete
 
-## Enterprise expansion phases
-
-- [x] Fase 0 — Gate report + requirements matrix (`REQUIREMENTS_TRACEABILITY.md`)
-- [~] Fase 1 — Fundament (docs, entitlements expansion, DMS schema, accountant schema, module scaffolds, pure-logic tests)
-- [ ] Fase 2 — Commerciële kern
-- [ ] Fase 3 — Operationele kern
-- [ ] Fase 4 — Financieel platform
-- [ ] Fase 5 — Integraties
-- [ ] Fase 6 — Productierijpheid
-
-## This session delivered
-
-- Master + module product specs
-- `src/modules/*` boundary layout
-- Expanded `MODULE_KEYS` + `FEATURE_KEYS` (enterprise opt-in)
-- Migration `20251111000000_phase1_foundation_dms_accountant.sql`
-- Upload policy service (MIME/magic/quota/path)
-- Accountant completeness + period transitions
-- Stub bookkeeping adapters (not configured)
-- Types updated for new tables / `accountant` role
-
-## Explicitly not claimed complete
-
-Full accounting, calc engine, DnD planning, offline PWA, inventory, maintenance, quality/safety, Peppol, PSD2, Exact/Yuki/AFAS/SnelStart live APIs.
-
-## Next
-
-1. Apply migrations on Supabase + Tenant A/B proof  
-2. Wire document upload Server Actions to policy + signed URLs  
-3. Accountant invite UI + pack collector  
-4. Next.js upgrade decision  
+- Full ERP modules
+- Expo mobile binary
+- Wiring every Server Action to Layer 3/4
+- Live tenant isolation proof

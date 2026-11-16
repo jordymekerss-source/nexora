@@ -38,8 +38,8 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Planning</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">Planning</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           Weekrooster per medewerker met snelle toewijzing.
         </p>
       </div>
@@ -59,22 +59,22 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-950/50 text-xs uppercase text-zinc-500">
+              <tr className="border-b border-surface-border bg-surface/50 text-xs uppercase text-ink0">
                 <th className="px-3 py-3">Medewerker</th>
                 {days.map((day, index) => (
                   <th key={ymd(day)} className="px-3 py-3">
                     <div>{DAY_LABELS[index]}</div>
-                    <div className="mt-1 font-normal normal-case text-zinc-400">
+                    <div className="mt-1 font-normal normal-case text-ink-muted">
                       {day.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit" })}
                     </div>
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-surface-border">
               {employees.map((employee) => (
                 <tr key={employee.id} className="align-top">
-                  <td className="px-3 py-3 font-medium text-zinc-100">{employee.full_name}</td>
+                  <td className="px-3 py-3 font-medium text-ink">{employee.full_name}</td>
                   {days.map((day) => {
                     const key = ymd(day);
                     const daySchedules = schedules.filter(
@@ -84,7 +84,7 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
                     );
                     return (
                       <td key={`${employee.id}-${key}`} className="px-2 py-2">
-                        <div className="min-h-[88px] space-y-2 rounded-md border border-zinc-800 bg-zinc-950/30 p-2">
+                        <div className="min-h-[88px] space-y-2 rounded-md border border-surface-border bg-surface/30 p-2">
                           {daySchedules.map((schedule) => {
                             const project = projectMap.get(schedule.project_id);
                             return (
@@ -115,13 +115,13 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
           </table>
         </div>
         {employees.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-zinc-500">Geen medewerkers beschikbaar.</div>
+          <div className="px-4 py-8 text-sm text-ink0">Geen medewerkers beschikbaar.</div>
         ) : null}
       </Card>
 
       <Card>
-        <h2 className="text-lg font-semibold text-zinc-100">Snelle toewijzing</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-ink">Snelle toewijzing</h2>
+        <p className="mt-1 text-sm text-ink0">
           Wijs een project toe aan een medewerker op een specifieke dag.
         </p>
         <form action={assignScheduleFormAction} className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -136,7 +136,7 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
               }))}
             />
           ) : (
-            <div className="rounded-md border border-zinc-800 px-3 py-2 text-sm text-zinc-500">
+            <div className="rounded-md border border-surface-border px-3 py-2 text-sm text-ink0">
               Geen medewerkers
             </div>
           )}
@@ -151,7 +151,7 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
               }))}
             />
           ) : (
-            <div className="rounded-md border border-zinc-800 px-3 py-2 text-sm text-zinc-500">
+            <div className="rounded-md border border-surface-border px-3 py-2 text-sm text-ink0">
               Geen projecten
             </div>
           )}

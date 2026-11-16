@@ -74,8 +74,8 @@ export default async function CreateOrganizationPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
       <Card>
-        <h1 className="text-xl font-semibold text-zinc-50">Organisatie aanmaken</h1>
-        <p className="mt-2 text-sm text-zinc-400">
+        <h1 className="text-xl font-semibold text-ink">Organisatie aanmaken</h1>
+        <p className="mt-2 text-sm text-ink-muted">
           Dit maakt je bedrijfstenant aan en wijst je veilig de werkgeverrol toe. Dit is geen
           metadata van de registratiepagina.
         </p>
@@ -87,7 +87,7 @@ export default async function CreateOrganizationPage() {
           </Button>
         </form>
 
-        <div className="mt-6 text-sm text-zinc-500">
+        <div className="mt-6 text-sm text-ink0">
           Uitloggen?{" "}
           <Link className="text-accent hover:text-emerald-300" href="/login">
             Terug naar inloggen

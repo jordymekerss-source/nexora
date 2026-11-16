@@ -1,14 +1,14 @@
 import type { InvoiceStatus, QuoteStatus } from "@/types/database";
 
 const quoteStyles: Record<QuoteStatus, string> = {
-  draft: "border-zinc-600 text-zinc-300",
+  draft: "border-zinc-600 text-ink-muted",
   sent: "border-sky-700 text-sky-300",
   accepted: "border-emerald-700 text-emerald-300",
   rejected: "border-red-800 text-red-300",
 };
 
 const invoiceStyles: Record<InvoiceStatus, string> = {
-  draft: "border-zinc-600 text-zinc-300",
+  draft: "border-zinc-600 text-ink-muted",
   sent: "border-sky-700 text-sky-300",
   paid: "border-emerald-700 text-emerald-300",
   overdue: "border-amber-700 text-amber-300",

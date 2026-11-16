@@ -48,11 +48,11 @@ export default async function LoginPage({ searchParams }: PageProps) {
       <div className="flex min-h-screen items-center justify-center px-4 py-12">
         <div className="w-full max-w-md space-y-6">
           <div className="text-center">
-            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
               NEXORA
             </div>
-            <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Inloggen</h1>
-            <p className="mt-2 text-sm text-zinc-400">
+            <h1 className="mt-2 text-2xl font-semibold text-ink">Inloggen</h1>
+            <p className="mt-2 text-sm text-ink-muted">
               Demo-omgeving — gebruik de testaccounts hieronder.
             </p>
           </div>
@@ -89,7 +89,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
             </form>
           </Card>
 
-          <div className="rounded-md border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-xs text-zinc-400">
+          <div className="rounded-md border border-surface-border bg-surface/40 px-4 py-3 text-xs text-ink-muted">
             <div>
               Medewerker: <code>sam@nexora.local</code> / <code>nexora-demo-employee</code>
             </div>
@@ -134,11 +134,11 @@ export default async function LoginPage({ searchParams }: PageProps) {
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
             NEXORA
           </div>
-          <h1 className="mt-2 text-2xl font-semibold text-zinc-50">Inloggen</h1>
-          <p className="mt-2 text-sm text-zinc-400">
+          <h1 className="mt-2 text-2xl font-semibold text-ink">Inloggen</h1>
+          <p className="mt-2 text-sm text-ink-muted">
             Multi-tenant bedrijfsplatform voor installatie- en dienstverlenende bedrijven.
           </p>
         </div>
@@ -180,7 +180,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
           </form>
         </Card>
 
-        <div className="text-center text-sm text-zinc-400">
+        <div className="text-center text-sm text-ink-muted">
           Nog geen account?{" "}
           <Link className="font-medium text-accent hover:text-emerald-300" href="/signup">
             Account aanmaken

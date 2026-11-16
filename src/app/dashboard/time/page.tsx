@@ -27,20 +27,28 @@ export default async function TimeEntriesPage() {
     const isEmployer = persona === "employer" || persona === null;
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-zinc-50">Uren</h1>
-        <p className="text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">Uren</h1>
+        <p className="text-sm text-ink-muted">
           Demo: medewerker-klok staat op /employee. Werkgevers kunnen hier correcties
           registreren met behoud van historie.
         </p>
         <Card className="overflow-hidden p-0">
-          <div className="divide-y divide-zinc-900">
-            {store.timeEntries.map((entry) => (
-              <div key={entry.id} className="space-y-3 px-4 py-4 text-sm text-zinc-300">
-                <div className="font-medium text-zinc-100">
-                  {store.projects.find((project) => project.id === entry.project_id)?.title ??
-                    entry.project_id}
+          <div className="divide-y divide-surface-border">
+            {store.timeEntries.map((entry) => {
+              const employeeName =
+                store.profiles.find((profile) => profile.id === entry.user_id)?.full_name ??
+                "Medewerker";
+              const projectTitle =
+                store.projects.find((project) => project.id === entry.project_id)?.title ??
+                entry.project_id;
+              return (
+              <div key={entry.id} className="space-y-3 px-4 py-4 text-sm text-ink-muted">
+                <div className="font-medium text-ink">
+                  {employeeName}
+                  <span className="mx-2 text-zinc-600">·</span>
+                  {projectTitle}
                 </div>
-                <div className="text-zinc-500">
+                <div className="text-ink0">
                   {entry.status} · pauze {entry.break_minutes}m ·{" "}
                   {formatDateTime(entry.clock_in)}
                   {entry.clock_out !== null ? ` → ${formatDateTime(entry.clock_out)}` : " (open)"}
@@ -77,15 +85,16 @@ export default async function TimeEntriesPage() {
                   </form>
                 ) : null}
               </div>
-            ))}
+            );
+            })}
           </div>
         </Card>
         {store.timeEntryCorrections.length > 0 ? (
           <Card>
-            <h2 className="text-lg font-semibold text-zinc-100">Correctiehistorie</h2>
-            <div className="mt-3 divide-y divide-zinc-900 text-sm">
+            <h2 className="text-lg font-semibold text-ink">Correctiehistorie</h2>
+            <div className="mt-3 divide-y divide-surface-border text-sm">
               {store.timeEntryCorrections.slice(0, 10).map((correction) => (
-                <div key={correction.id} className="py-2 text-zinc-400">
+                <div key={correction.id} className="py-2 text-ink-muted">
                   {formatDateTime(correction.created_at)} · {correction.reason}
                 </div>
               ))}
@@ -151,8 +160,8 @@ export default async function TimeEntriesPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">Time</h1>
-        <p className="mt-2 text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">Time</h1>
+        <p className="mt-2 text-sm text-ink-muted">
           {role === "employer"
             ? "Review all submitted hours for your organization."
             : "Log hours against active jobs. Pending entries stay editable until approved."}
@@ -160,8 +169,8 @@ export default async function TimeEntriesPage() {
       </div>
 
       <Card>
-        <h2 className="text-lg font-semibold text-zinc-100">Log time</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-ink">Log time</h2>
+        <p className="mt-1 text-sm text-ink0">
           Use your local timezone; values are stored as UTC timestamps.
         </p>
 
@@ -169,7 +178,7 @@ export default async function TimeEntriesPage() {
           {projectOptions.length > 0 ? (
             <Select name="project_id" label="Project" required options={projectOptions} />
           ) : (
-            <div className="rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-400">
+            <div className="rounded-md border border-surface-border bg-surface/40 px-3 py-2 text-sm text-ink-muted">
               No projects available. Ask your employer to create a project first.
             </div>
           )}
@@ -184,12 +193,12 @@ export default async function TimeEntriesPage() {
       </Card>
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-zinc-800 px-4 py-3">
-          <h2 className="text-lg font-semibold text-zinc-100">Entries</h2>
+        <div className="border-b border-surface-border px-4 py-3">
+          <h2 className="text-lg font-semibold text-ink">Entries</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-950/40 text-xs uppercase text-zinc-500">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
               <tr>
                 {role === "employer" ? <th className="px-4 py-3">Person</th> : null}
                 <th className="px-4 py-3">Project</th>
@@ -202,7 +211,7 @@ export default async function TimeEntriesPage() {
                 {role === "employee" ? <th className="px-4 py-3 text-right">Edit</th> : null}
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-surface-border">
               {(entries ?? []).map((entry) => {
                 const person = memberMap.get(entry.user_id);
                 const label = person?.full_name ?? entry.user_id;
@@ -215,7 +224,7 @@ export default async function TimeEntriesPage() {
                 });
 
                 return (
-                  <tr key={entry.id} className="text-zinc-300">
+                  <tr key={entry.id} className="text-ink-muted">
                     {role === "employer" ? (
                       <td className="px-4 py-3">{label}</td>
                     ) : null}
@@ -227,18 +236,18 @@ export default async function TimeEntriesPage() {
                         {projectTitle}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-zinc-400">{formatDateTime(entry.clock_in)}</td>
-                    <td className="px-4 py-3 text-zinc-400">
+                    <td className="px-4 py-3 text-ink-muted">{formatDateTime(entry.clock_in)}</td>
+                    <td className="px-4 py-3 text-ink-muted">
                       {entry.clock_out === null ? "—" : formatDateTime(entry.clock_out)}
                     </td>
-                    <td className="px-4 py-3 text-zinc-400">{entry.break_minutes}m</td>
-                    <td className="px-4 py-3 text-zinc-200">{Math.round(worked)}m</td>
+                    <td className="px-4 py-3 text-ink-muted">{entry.break_minutes}m</td>
+                    <td className="px-4 py-3 text-ink">{Math.round(worked)}m</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs uppercase text-zinc-400">
+                      <span className="rounded-full border border-surface-border px-2 py-0.5 text-xs uppercase text-ink-muted">
                         {entry.status}
                       </span>
                     </td>
-                    <td className="max-w-xs truncate px-4 py-3 text-zinc-400">
+                    <td className="max-w-xs truncate px-4 py-3 text-ink-muted">
                       {entry.notes ?? "—"}
                     </td>
                     {role === "employee" ? (
@@ -298,7 +307,7 @@ export default async function TimeEntriesPage() {
           </table>
         </div>
         {(entries ?? []).length === 0 ? (
-          <div className="px-4 py-8 text-sm text-zinc-500">No time entries yet.</div>
+          <div className="px-4 py-8 text-sm text-ink0">No time entries yet.</div>
         ) : null}
       </Card>
     </div>

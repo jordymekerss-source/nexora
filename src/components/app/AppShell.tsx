@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useState, type ReactNode } from "react";
 import {
   CalendarDays,
   FileText,
@@ -7,11 +10,13 @@ import {
   HardHat,
   LayoutDashboard,
   LogOut,
+  Menu,
   Receipt,
   Timer,
   Truck,
   Users,
   Wrench,
+  X,
 } from "lucide-react";
 import type { ProfileRole } from "@/types/database";
 
@@ -20,7 +25,7 @@ type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 function navForRole(role: ProfileRole): readonly NavItem[] {
   const base: NavItem[] = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/dashboard/time", label: "Time", icon: Timer },
+    { href: "/dashboard/time", label: "Uren", icon: Timer },
   ];
 
   if (role === "employer") {
@@ -41,7 +46,7 @@ function navForRole(role: ProfileRole): readonly NavItem[] {
   if (role === "super_admin") {
     return [
       ...base,
-      { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+      { href: "/dashboard/projects", label: "Projecten", icon: FolderKanban },
       { href: "/dashboard/team", label: "Team", icon: Users },
     ];
   }
@@ -49,8 +54,15 @@ function navForRole(role: ProfileRole): readonly NavItem[] {
   return [
     ...base,
     { href: "/employee", label: "Inklokken", icon: Timer },
-    { href: "/dashboard/projects", label: "Projects", icon: FolderKanban },
+    { href: "/dashboard/projects", label: "Projecten", icon: FolderKanban },
   ];
+}
+
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/dashboard") {
+    return pathname === "/dashboard";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function AppShell({
@@ -64,45 +76,107 @@ export function AppShell({
   signOutSlot: ReactNode;
   children: ReactNode;
 }) {
+  const pathname = usePathname();
   const items = navForRole(role);
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-64 flex-shrink-0 border-r border-zinc-800 bg-surface md:block print:hidden">
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-72 border-r border-surface-border bg-surface-elevated/95 backdrop-blur transition-transform print:hidden md:static md:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="flex h-full flex-col px-4 py-6">
-          <div className="px-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              NEXORA
+          <div className="flex items-start justify-between px-2">
+            <div>
+              <div className="font-display text-2xl font-semibold tracking-tight text-ink">
+                NEXORA
+              </div>
+              <div className="mt-0.5 text-xs font-medium uppercase tracking-[0.18em] text-ink-muted">
+                Business OS
+              </div>
             </div>
-            <div className="mt-1 text-lg font-semibold text-zinc-100">Business OS</div>
+            <button
+              type="button"
+              className="rounded-lg p-2 text-ink-muted hover:bg-accent-soft md:hidden"
+              onClick={() => setOpen(false)}
+              aria-label="Menu sluiten"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <nav className="mt-8 flex flex-1 flex-col gap-1">
+
+          <nav className="mt-8 flex flex-1 flex-col gap-1" aria-label="Hoofdnavigatie">
             {items.map((item) => {
               const Icon = item.icon;
+              const active = isActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-white"
+                  onClick={() => setOpen(false)}
+                  className={`flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+                    active
+                      ? "bg-accent text-white shadow-sm"
+                      : "text-ink-muted hover:bg-accent-soft/70 hover:text-ink"
+                  }`}
                 >
-                  <Icon className="h-4 w-4 text-accent" aria-hidden />
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
                   {item.label}
                 </Link>
               );
             })}
           </nav>
-          <div className="mt-auto border-t border-zinc-800 pt-4">
-            <div className="truncate px-3 text-xs text-zinc-500">{userLabel}</div>
+
+          <div className="mt-auto border-t border-surface-border pt-4">
+            <div className="truncate px-3 text-xs text-ink-muted">{userLabel}</div>
             <div className="mt-2 px-1">{signOutSlot}</div>
           </div>
         </div>
       </aside>
-      <main className="flex-1">
-        <div className="border-b border-zinc-800 bg-surface/80 px-6 py-4 backdrop-blur md:hidden print:hidden">
-          <div className="text-sm font-semibold text-zinc-100">NEXORA</div>
-        </div>
-        <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</div>
-      </main>
+
+      {open ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-ink/30 md:hidden"
+          aria-label="Overlay sluiten"
+          onClick={() => setOpen(false)}
+        />
+      ) : null}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 border-b border-surface-border bg-surface-elevated/90 px-4 py-3 backdrop-blur print:hidden md:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="rounded-lg p-2 text-ink-muted hover:bg-accent-soft md:hidden"
+                onClick={() => setOpen(true)}
+                aria-label="Menu openen"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="md:hidden">
+                <div className="font-display text-lg font-semibold text-ink">NEXORA</div>
+              </div>
+              <div className="hidden text-sm text-ink-muted md:block">
+                {role === "employer"
+                  ? "Werkgever"
+                  : role === "employee"
+                    ? "Medewerker"
+                    : role === "accountant"
+                      ? "Accountant"
+                      : "Beheer"}
+              </div>
+            </div>
+            <div className="truncate text-sm font-medium text-ink">{userLabel}</div>
+          </div>
+        </header>
+        <main className="flex-1">
+          <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }
@@ -112,7 +186,7 @@ export function SignOutForm({ children }: { children?: ReactNode }) {
     <form action="/auth/sign-out" method="post" className="inline-flex w-full">
       <button
         type="submit"
-        className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-zinc-700 bg-transparent px-3 py-2 text-sm text-zinc-200 transition hover:border-zinc-500 hover:text-white"
+        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-surface-border bg-transparent px-3 py-2 text-sm font-medium text-ink transition hover:bg-accent-soft"
       >
         <LogOut className="h-4 w-4" aria-hidden />
         {children ?? "Uitloggen"}

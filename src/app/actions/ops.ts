@@ -60,7 +60,10 @@ export async function switchDemoPersonaAction(formData: FormData): Promise<void>
   if (!isDemoMode()) {
     redirect("/dashboard");
   }
-  const persona = parseDemoPersona(String(formData.get("persona") ?? "employer"));
+  const persona = parseDemoPersona(String(formData.get("persona") ?? ""));
+  if (persona === null) {
+    redirect("/login?error=persona");
+  }
   cookies().set(DEMO_PERSONA_COOKIE, persona, {
     path: "/",
     httpOnly: true,

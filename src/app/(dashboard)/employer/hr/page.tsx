@@ -21,8 +21,8 @@ export default async function EmployerHrPage({ searchParams }: PageProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-50">HR & certificaten</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-semibold text-ink">HR & certificaten</h1>
+        <p className="mt-1 text-sm text-ink-muted">
           VCA, rijbewijzen en andere veiligheidsbewijzen met vervalwaarschuwingen.
         </p>
       </div>
@@ -35,7 +35,7 @@ export default async function EmployerHrPage({ searchParams }: PageProps) {
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card className="overflow-hidden p-0">
-          <div className="divide-y divide-zinc-900">
+          <div className="divide-y divide-surface-border">
             {certificates.map((certificate) => {
               const days = daysUntil(certificate.expiry_date);
               const tone =
@@ -43,12 +43,12 @@ export default async function EmployerHrPage({ searchParams }: PageProps) {
                   ? "border-red-900 bg-red-950/30 text-red-200"
                   : days <= 45
                     ? "border-amber-900 bg-amber-950/20 text-amber-200"
-                    : "border-zinc-800 text-zinc-400";
+                    : "border-surface-border text-ink-muted";
               return (
                 <div key={certificate.id} className="flex items-start justify-between gap-3 px-4 py-4">
                   <div>
-                    <div className="font-medium text-zinc-100">{certificate.certificate_name}</div>
-                    <div className="text-sm text-zinc-500">{certificate.user_name}</div>
+                    <div className="font-medium text-ink">{certificate.certificate_name}</div>
+                    <div className="text-sm text-ink0">{certificate.user_name}</div>
                     {certificate.document_url !== null ? (
                       <a
                         href={certificate.document_url}
@@ -69,12 +69,12 @@ export default async function EmployerHrPage({ searchParams }: PageProps) {
             })}
           </div>
           {certificates.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-zinc-500">Nog geen certificaten.</div>
+            <div className="px-4 py-8 text-sm text-ink0">Nog geen certificaten.</div>
           ) : null}
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold text-zinc-100">Certificaat toevoegen</h2>
+          <h2 className="text-lg font-semibold text-ink">Certificaat toevoegen</h2>
           <form action={createCertificateFormAction} className="mt-4 space-y-3">
             <Select
               name="user_id"

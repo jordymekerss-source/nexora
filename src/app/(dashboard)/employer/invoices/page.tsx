@@ -44,8 +44,8 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-50">Facturatie</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-ink">Facturatie</h1>
+          <p className="mt-1 text-sm text-ink-muted">
             Openstaand, betaald en verlopen omzet in één overzicht.
           </p>
         </div>
@@ -60,15 +60,15 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Openstaand</div>
+          <div className="text-xs uppercase text-ink0">Openstaand</div>
           <div className="mt-2 text-2xl font-semibold text-sky-300">{formatEuro(sum(["sent"]))}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Betaald</div>
+          <div className="text-xs uppercase text-ink0">Betaald</div>
           <div className="mt-2 text-2xl font-semibold text-accent">{formatEuro(sum(["paid"]))}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase text-zinc-500">Verlopen</div>
+          <div className="text-xs uppercase text-ink0">Verlopen</div>
           <div className="mt-2 text-2xl font-semibold text-amber-300">
             {formatEuro(sum(["overdue"]))}
           </div>
@@ -78,7 +78,7 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-950/40 text-xs uppercase text-zinc-500">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Klant</th>
@@ -89,10 +89,10 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
                 <th className="px-4 py-3 text-right">Bekijken</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-surface-border">
               {withDisplay.map((invoice) => (
-                <tr key={invoice.id} className="text-zinc-300">
-                  <td className="px-4 py-3 font-medium text-zinc-100">{invoice.invoice_number}</td>
+                <tr key={invoice.id} className="text-ink-muted">
+                  <td className="px-4 py-3 font-medium text-ink">{invoice.invoice_number}</td>
                   <td className="px-4 py-3">{invoice.client_name}</td>
                   <td className="px-4 py-3">
                     <InvoiceStatusBadge status={invoice.displayStatus} />
@@ -100,8 +100,8 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
                   <td className="px-4 py-3 text-accent">
                     {formatEuro(Number(invoice.total_amount))}
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">{invoice.due_date}</td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDateTime(invoice.created_at)}</td>
+                  <td className="px-4 py-3 text-ink-muted">{invoice.due_date}</td>
+                  <td className="px-4 py-3 text-ink0">{formatDateTime(invoice.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       className="text-accent hover:text-emerald-300"
@@ -111,7 +111,7 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
                     </Link>
                     {" · "}
                     <Link
-                      className="text-zinc-400 hover:text-zinc-200"
+                      className="text-ink-muted hover:text-ink"
                       href={`/employer/invoices/${invoice.id}/print`}
                     >
                       Print
@@ -123,7 +123,7 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
           </table>
         </div>
         {withDisplay.length === 0 ? (
-          <div className="px-4 py-10 text-sm text-zinc-500">Nog geen facturen.</div>
+          <div className="px-4 py-10 text-sm text-ink0">Nog geen facturen.</div>
         ) : null}
       </Card>
     </div>

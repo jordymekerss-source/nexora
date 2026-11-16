@@ -3,11 +3,52 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --nx-bg: #f4f3ef;
+  --nx-surface: #ffffff;
+  --nx-ink: #151a18;
+  --nx-muted: #5a635e;
+  --nx-accent: #1a5c4a;
+  --nx-accent-hover: #14483a;
+  --nx-accent-soft: #d9ebe4;
+  --nx-border: #e3e5e1;
+  --nx-danger: #b42318;
+  --nx-warning: #b54708;
+  --nx-success: #1a5c4a;
+  --nx-shadow: 0 1px 2px rgba(21, 26, 24, 0.04), 0 8px 24px rgba(21, 26, 24, 0.06);
 }
 
 body {
-  @apply min-h-screen bg-surface text-zinc-100 antialiased;
+  @apply min-h-screen antialiased;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(26, 92, 74, 0.08), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(21, 26, 24, 0.05), transparent 50%),
+    var(--nx-bg);
+  color: var(--nx-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer utilities {
+  .nx-panel {
+    background: var(--nx-surface);
+    border: 1px solid var(--nx-border);
+    border-radius: 0.75rem;
+    box-shadow: var(--nx-shadow);
+  }
+
+  .nx-focus {
+    @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+  }
 }
 
 @media print {
