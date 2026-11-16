@@ -29,7 +29,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
   return (
     <div className="space-y-6" data-testid="employer-project-overview">
       <div>
-        <Link href="/employer/projects" className="text-sm text-ink0 hover:text-ink-muted">
+        <Link href="/employer/projects" className="text-sm text-ink-muted hover:text-ink-muted">
           ← Projecten
         </Link>
         <h1 className="mt-3 text-2xl font-semibold text-ink">{project.title}</h1>
@@ -46,7 +46,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
 
       <Card>
         <h2 className="text-lg font-semibold text-ink">Nu actief op dit project</h2>
-        <p className="mt-1 text-sm text-ink0">
+        <p className="mt-1 text-sm text-ink-muted">
           Live overzicht van medewerkers die momenteel zijn ingeklokt.
         </p>
         <div className="mt-4 divide-y divide-surface-border" data-testid="active-workers-list">
@@ -59,7 +59,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
             >
               <div>
                 <div className="font-medium text-ink">{worker.fullName}</div>
-                <div className="text-ink0">
+                <div className="text-ink-muted">
                   Sinds {formatDateTime(worker.clockIn)}
                   {worker.notes !== null ? ` · ${worker.notes}` : ""}
                 </div>
@@ -70,14 +70,14 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
             </div>
           ))}
           {activeWorkers.length === 0 ? (
-            <div className="py-6 text-sm text-ink0">Niemand is nu ingeklokt.</div>
+            <div className="py-6 text-sm text-ink-muted">Niemand is nu ingeklokt.</div>
           ) : null}
         </div>
       </Card>
 
       <Card data-testid="project-photos-panel">
         <h2 className="text-lg font-semibold text-ink">Projectfoto&apos;s</h2>
-        <p className="mt-1 text-sm text-ink0">
+        <p className="mt-1 text-sm text-ink-muted">
           Recent geüploade foto&apos;s van medewerkers op dit project.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -101,7 +101,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
             </figure>
           ))}
           {recentPhotos.length === 0 ? (
-            <div className="py-4 text-sm text-ink0 sm:col-span-2">Nog geen foto&apos;s.</div>
+            <div className="py-4 text-sm text-ink-muted sm:col-span-2">Nog geen foto&apos;s.</div>
           ) : null}
         </div>
       </Card>
@@ -116,7 +116,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
               </div>
             ))}
             {assignments.length === 0 ? (
-              <div className="py-4 text-ink0">Nog niemand toegewezen.</div>
+              <div className="py-4 text-ink-muted">Nog niemand toegewezen.</div>
             ) : null}
           </div>
 
@@ -143,7 +143,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
             {workOrders.map((order) => (
               <div key={order.id} className="rounded-md border border-surface-border p-3">
                 <div className="text-ink">{order.work_summary}</div>
-                <div className="mt-1 text-xs text-ink0">
+                <div className="mt-1 text-xs text-ink-muted">
                   {order.completed_at !== null
                     ? `Afgerond ${formatDateTime(order.completed_at)}`
                     : "Concept"}
@@ -159,7 +159,7 @@ export default async function EmployerProjectDetailPage({ params, searchParams }
               </div>
             ))}
             {workOrders.length === 0 ? (
-              <div className="text-ink0">Nog geen werkbonnen.</div>
+              <div className="text-ink-muted">Nog geen werkbonnen.</div>
             ) : null}
           </div>
         </Card>

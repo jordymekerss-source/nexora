@@ -20,9 +20,9 @@ export default async function ProjectsListPage() {
               <div key={project.id} className="flex items-center justify-between px-4 py-3 text-sm">
                 <div>
                   <div className="font-medium text-ink">{project.title}</div>
-                  <div className="text-ink0">{project.client_name ?? "—"}</div>
+                  <div className="text-ink-muted">{project.client_name ?? "—"}</div>
                 </div>
-                <span className="text-xs uppercase text-ink0">{project.status}</span>
+                <span className="text-xs uppercase text-ink-muted">{project.status}</span>
               </div>
             ))}
           </div>
@@ -75,7 +75,7 @@ export default async function ProjectsListPage() {
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Title</th>
                 <th className="px-4 py-3">Client</th>
@@ -109,7 +109,7 @@ export default async function ProjectsListPage() {
           </table>
         </div>
         {(projects ?? []).length === 0 ? (
-          <div className="px-4 py-8 text-sm text-ink0">
+          <div className="px-4 py-8 text-sm text-ink-muted">
             No projects yet.
             {canManage ? (
               <>

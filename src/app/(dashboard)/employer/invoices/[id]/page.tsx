@@ -37,7 +37,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
     <div className="space-y-6">
       <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Link href="/employer/invoices" className="text-sm text-ink0 hover:text-ink-muted">
+          <Link href="/employer/invoices" className="text-sm text-ink-muted hover:text-ink-muted">
             ← Facturen
           </Link>
           <h1 className="mt-3 text-2xl font-semibold text-ink">{invoice.invoice_number}</h1>
@@ -100,13 +100,13 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
 
         <div className="grid gap-8 px-8 py-8 sm:grid-cols-2">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
               Factuur aan
             </div>
             <div className="mt-2 text-base font-semibold">{invoice.client_name}</div>
           </div>
           <div className="sm:text-right">
-            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
               Betaling
             </div>
             <div className="mt-2 text-sm">
@@ -119,7 +119,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: PagePr
         <div className="px-8 pb-8">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-ink0">
+              <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-ink-muted">
                 <th className="py-2 pr-3">Omschrijving</th>
                 <th className="py-2 pr-3 text-right">Aantal</th>
                 <th className="py-2 pr-3 text-right">Prijs</th>

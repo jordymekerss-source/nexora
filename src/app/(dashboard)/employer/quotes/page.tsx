@@ -80,7 +80,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Klant</th>
@@ -105,7 +105,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
                   <td className="px-4 py-3 text-accent">
                     {formatEuro(Number(quote.total_amount))}
                   </td>
-                  <td className="px-4 py-3 text-ink0">{formatDateTime(quote.created_at)}</td>
+                  <td className="px-4 py-3 text-ink-muted">{formatDateTime(quote.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     {quote.status !== "rejected" && quote.status !== "accepted" ? (
                       <form action={convertQuoteFormAction}>
@@ -113,9 +113,9 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
                         <Button type="submit">Zet om naar Project & Factuur</Button>
                       </form>
                     ) : quote.status === "accepted" ? (
-                      <span className="text-xs text-ink0">Omgezet</span>
+                      <span className="text-xs text-ink-muted">Omgezet</span>
                     ) : (
-                      <span className="text-xs text-ink0">—</span>
+                      <span className="text-xs text-ink-muted">—</span>
                     )}
                   </td>
                 </tr>
@@ -124,7 +124,7 @@ export default async function EmployerQuotesPage({ searchParams }: PageProps) {
           </table>
         </div>
         {filtered.length === 0 ? (
-          <div className="px-4 py-10 text-sm text-ink0">Geen offertes voor dit filter.</div>
+          <div className="px-4 py-10 text-sm text-ink-muted">Geen offertes voor dit filter.</div>
         ) : null}
       </Card>
     </div>

@@ -37,4 +37,13 @@ describe("resolveEnabledModules fail-closed", () => {
     const enabled = resolveEnabledModules({ rows: null, loadError: true });
     expect(enabled.size).toBe(0);
   });
+
+  it("treats configured empty config as all-disabled", () => {
+    const enabled = resolveEnabledModules({
+      rows: [],
+      configStatus: "configured",
+    });
+    expect(enabled.size).toBe(0);
+  });
 });
+

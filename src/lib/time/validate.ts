@@ -1,8 +1,12 @@
+import { MAX_SHIFT_MS } from "@/lib/time/parse";
+
 export type ClockRangeIssue =
   | "invalid_clock_in"
   | "invalid_clock_out"
   | "negative_or_zero_duration"
-  | "break_exceeds_worked";
+  | "break_exceeds_worked"
+  | "negative_break"
+  | "unrealistic_duration";
 
 export function validateClockRange(params: {
   clockInIso: string;
@@ -14,10 +18,11 @@ export function validateClockRange(params: {
     return "invalid_clock_in";
   }
 
+  if (params.breakMinutes < 0) {
+    return "negative_break";
+  }
+
   if (params.clockOutIso === null) {
-    if (params.breakMinutes < 0) {
-      return "break_exceeds_worked";
-    }
     return null;
   }
 
@@ -28,9 +33,12 @@ export function validateClockRange(params: {
   if (end <= start) {
     return "negative_or_zero_duration";
   }
+  if (end - start > MAX_SHIFT_MS) {
+    return "unrealistic_duration";
+  }
 
   const worked = (end - start) / 60000;
-  if (params.breakMinutes < 0 || params.breakMinutes > worked) {
+  if (params.breakMinutes > worked) {
     return "break_exceeds_worked";
   }
   return null;

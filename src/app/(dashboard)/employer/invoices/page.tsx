@@ -60,15 +60,15 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
-          <div className="text-xs uppercase text-ink0">Openstaand</div>
+          <div className="text-xs uppercase text-ink-muted">Openstaand</div>
           <div className="mt-2 text-2xl font-semibold text-sky-300">{formatEuro(sum(["sent"]))}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase text-ink0">Betaald</div>
+          <div className="text-xs uppercase text-ink-muted">Betaald</div>
           <div className="mt-2 text-2xl font-semibold text-accent">{formatEuro(sum(["paid"]))}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-xs uppercase text-ink0">Verlopen</div>
+          <div className="text-xs uppercase text-ink-muted">Verlopen</div>
           <div className="mt-2 text-2xl font-semibold text-amber-300">
             {formatEuro(sum(["overdue"]))}
           </div>
@@ -78,7 +78,7 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Nummer</th>
                 <th className="px-4 py-3">Klant</th>
@@ -101,7 +101,7 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
                     {formatEuro(Number(invoice.total_amount))}
                   </td>
                   <td className="px-4 py-3 text-ink-muted">{invoice.due_date}</td>
-                  <td className="px-4 py-3 text-ink0">{formatDateTime(invoice.created_at)}</td>
+                  <td className="px-4 py-3 text-ink-muted">{formatDateTime(invoice.created_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       className="text-accent hover:text-emerald-300"
@@ -123,7 +123,7 @@ export default async function EmployerInvoicesPage({ searchParams }: PageProps) 
           </table>
         </div>
         {withDisplay.length === 0 ? (
-          <div className="px-4 py-10 text-sm text-ink0">Nog geen facturen.</div>
+          <div className="px-4 py-10 text-sm text-ink-muted">Nog geen facturen.</div>
         ) : null}
       </Card>
     </div>

@@ -59,7 +59,7 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-surface-border bg-surface/50 text-xs uppercase text-ink0">
+              <tr className="border-b border-surface-border bg-surface/50 text-xs uppercase text-ink-muted">
                 <th className="px-3 py-3">Medewerker</th>
                 {days.map((day, index) => (
                   <th key={ymd(day)} className="px-3 py-3">
@@ -115,13 +115,13 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
           </table>
         </div>
         {employees.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-ink0">Geen medewerkers beschikbaar.</div>
+          <div className="px-4 py-8 text-sm text-ink-muted">Geen medewerkers beschikbaar.</div>
         ) : null}
       </Card>
 
       <Card>
         <h2 className="text-lg font-semibold text-ink">Snelle toewijzing</h2>
-        <p className="mt-1 text-sm text-ink0">
+        <p className="mt-1 text-sm text-ink-muted">
           Wijs een project toe aan een medewerker op een specifieke dag.
         </p>
         <form action={assignScheduleFormAction} className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -136,7 +136,7 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
               }))}
             />
           ) : (
-            <div className="rounded-md border border-surface-border px-3 py-2 text-sm text-ink0">
+            <div className="rounded-md border border-surface-border px-3 py-2 text-sm text-ink-muted">
               Geen medewerkers
             </div>
           )}
@@ -151,7 +151,7 @@ export default async function EmployerPlanningPage({ searchParams }: PageProps) 
               }))}
             />
           ) : (
-            <div className="rounded-md border border-surface-border px-3 py-2 text-sm text-ink0">
+            <div className="rounded-md border border-surface-border px-3 py-2 text-sm text-ink-muted">
               Geen projecten
             </div>
           )}

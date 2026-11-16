@@ -2,18 +2,36 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { assertAuthorized } from "@/lib/authorization/authorize";
 import { requireDashboardSession } from "@/lib/auth/require-user";
-import { assertModuleEnabled } from "@/lib/entitlements/check";
+import { assertModuleEnabled, listEnabledModules } from "@/lib/entitlements/check";
+import type { SessionPermissionContext } from "@/lib/permissions/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { parseBreakMinutes, parseUserDateTime } from "@/lib/time/parse";
 import { validateClockRange } from "@/lib/time/validate";
 import { isUuid } from "@/lib/validation";
 
-export async function createTimeEntryAction(formData: FormData) {
+async function permissionContext(): Promise<SessionPermissionContext> {
   const ctx = await requireDashboardSession();
   if (ctx.tenantId === null) {
     redirect("/dashboard/time");
   }
-  await assertModuleEnabled(ctx.tenantId, "time");
+  const modules = await listEnabledModules(ctx.tenantId);
+  return {
+    userId: ctx.session.userId,
+    tenantId: ctx.tenantId,
+    role: ctx.session.role === "none" ? "none" : ctx.session.role,
+    enabledModules: [...modules],
+    enabledFeatures: [],
+    actionPermissions: new Map(),
+    dataScopes: [],
+    supportGrant: null,
+  };
+}
+
+export async function createTimeEntryAction(formData: FormData) {
+  const actor = await permissionContext();
+  await assertModuleEnabled(actor.tenantId!, "time");
 
   const projectId = formData.get("project_id");
   const clockIn = formData.get("clock_in");
@@ -21,31 +39,40 @@ export async function createTimeEntryAction(formData: FormData) {
   const breakMinutesRaw = formData.get("break_minutes");
   const notes = formData.get("notes");
 
-  if (
-    typeof projectId !== "string" ||
-    !isUuid(projectId) ||
-    typeof clockIn !== "string" ||
-    clockIn.length === 0
-  ) {
+  if (typeof projectId !== "string" || !isUuid(projectId) || typeof clockIn !== "string") {
     redirect("/dashboard/time?error=form");
   }
 
-  const clockInIso = new Date(clockIn).toISOString();
-  const clockOutValue =
-    typeof clockOut === "string" && clockOut.trim().length > 0
-      ? new Date(clockOut.trim()).toISOString()
-      : null;
+  // Module/action first; project assignment is validated against DB below.
+  assertAuthorized(
+    actor,
+    { moduleKey: "time", resourceTenantId: actor.tenantId },
+    "create",
+  );
 
-  const breakMinutes =
-    typeof breakMinutesRaw === "string" && breakMinutesRaw.trim().length > 0
-      ? Number.parseInt(breakMinutesRaw, 10)
-      : 0;
-  const safeBreak = Number.isFinite(breakMinutes) ? Math.max(0, breakMinutes) : 0;
+  const parsedIn = parseUserDateTime(clockIn);
+  if (!parsedIn.ok) {
+    redirect("/dashboard/time?error=invalid_clock_in");
+  }
+
+  let clockOutValue: string | null = null;
+  if (typeof clockOut === "string" && clockOut.trim().length > 0) {
+    const parsedOut = parseUserDateTime(clockOut);
+    if (!parsedOut.ok) {
+      redirect("/dashboard/time?error=invalid_clock_out");
+    }
+    clockOutValue = parsedOut.iso;
+  }
+
+  const parsedBreak = parseBreakMinutes(breakMinutesRaw);
+  if (!parsedBreak.ok) {
+    redirect(`/dashboard/time?error=${parsedBreak.reason === "negative" ? "negative_break" : "form"}`);
+  }
 
   const issue = validateClockRange({
-    clockInIso,
+    clockInIso: parsedIn.iso,
     clockOutIso: clockOutValue,
-    breakMinutes: safeBreak,
+    breakMinutes: parsedBreak.minutes,
   });
   if (issue !== null) {
     redirect(`/dashboard/time?error=${issue}`);
@@ -57,19 +84,32 @@ export async function createTimeEntryAction(formData: FormData) {
     .from("projects")
     .select("id")
     .eq("id", projectId)
-    .eq("tenant_id", ctx.tenantId)
+    .eq("tenant_id", actor.tenantId!)
     .maybeSingle();
   if (project === null) {
     redirect("/dashboard/time?error=project");
   }
 
+  if (actor.role === "employee") {
+    const { data: assignment } = await supabase
+      .from("project_assignments")
+      .select("id")
+      .eq("tenant_id", actor.tenantId!)
+      .eq("project_id", projectId)
+      .eq("user_id", actor.userId)
+      .maybeSingle();
+    if (assignment === null) {
+      redirect("/dashboard/time?error=forbidden");
+    }
+  }
+
   const { error } = await supabase.from("time_entries").insert({
-    tenant_id: ctx.tenantId,
-    user_id: ctx.session.userId,
+    tenant_id: actor.tenantId!,
+    user_id: actor.userId,
     project_id: projectId,
-    clock_in: clockInIso,
+    clock_in: parsedIn.iso,
     clock_out: clockOutValue,
-    break_minutes: safeBreak,
+    break_minutes: parsedBreak.minutes,
     notes: typeof notes === "string" && notes.trim().length > 0 ? notes.trim() : null,
     status: "pending",
   });
@@ -84,11 +124,8 @@ export async function createTimeEntryAction(formData: FormData) {
 }
 
 export async function updateOwnPendingTimeEntryAction(formData: FormData) {
-  const ctx = await requireDashboardSession();
-  if (ctx.tenantId === null) {
-    redirect("/dashboard/time");
-  }
-  await assertModuleEnabled(ctx.tenantId, "time");
+  const actor = await permissionContext();
+  await assertModuleEnabled(actor.tenantId!, "time");
 
   const entryId = formData.get("entry_id");
   const projectId = formData.get("project_id");
@@ -102,27 +139,40 @@ export async function updateOwnPendingTimeEntryAction(formData: FormData) {
     !isUuid(entryId) ||
     typeof projectId !== "string" ||
     !isUuid(projectId) ||
-    typeof clockIn !== "string" ||
-    clockIn.length === 0
+    typeof clockIn !== "string"
   ) {
     redirect("/dashboard/time?error=form");
   }
 
-  const clockInIso = new Date(clockIn).toISOString();
-  const clockOutValue =
-    typeof clockOut === "string" && clockOut.trim().length > 0
-      ? new Date(clockOut.trim()).toISOString()
-      : null;
-  const breakMinutes =
-    typeof breakMinutesRaw === "string" && breakMinutesRaw.trim().length > 0
-      ? Number.parseInt(breakMinutesRaw, 10)
-      : 0;
-  const safeBreak = Number.isFinite(breakMinutes) ? Math.max(0, breakMinutes) : 0;
+  assertAuthorized(
+    actor,
+    { moduleKey: "time", resourceTenantId: actor.tenantId },
+    "edit",
+  );
+
+  const parsedIn = parseUserDateTime(clockIn);
+  if (!parsedIn.ok) {
+    redirect("/dashboard/time?error=invalid_clock_in");
+  }
+
+  let clockOutValue: string | null = null;
+  if (typeof clockOut === "string" && clockOut.trim().length > 0) {
+    const parsedOut = parseUserDateTime(clockOut);
+    if (!parsedOut.ok) {
+      redirect("/dashboard/time?error=invalid_clock_out");
+    }
+    clockOutValue = parsedOut.iso;
+  }
+
+  const parsedBreak = parseBreakMinutes(breakMinutesRaw);
+  if (!parsedBreak.ok) {
+    redirect(`/dashboard/time?error=${parsedBreak.reason === "negative" ? "negative_break" : "form"}`);
+  }
 
   const issue = validateClockRange({
-    clockInIso,
+    clockInIso: parsedIn.iso,
     clockOutIso: clockOutValue,
-    breakMinutes: safeBreak,
+    breakMinutes: parsedBreak.minutes,
   });
   if (issue !== null) {
     redirect(`/dashboard/time?error=${issue}`);
@@ -132,14 +182,14 @@ export async function updateOwnPendingTimeEntryAction(formData: FormData) {
   const { data: updated, error } = await supabase
     .from("time_entries")
     .update({
-      clock_in: clockInIso,
+      clock_in: parsedIn.iso,
       clock_out: clockOutValue,
-      break_minutes: safeBreak,
+      break_minutes: parsedBreak.minutes,
       notes: typeof notes === "string" && notes.trim().length > 0 ? notes.trim() : null,
     })
     .eq("id", entryId)
-    .eq("user_id", ctx.session.userId)
-    .eq("tenant_id", ctx.tenantId)
+    .eq("user_id", actor.userId)
+    .eq("tenant_id", actor.tenantId!)
     .eq("status", "pending")
     .select("id");
 

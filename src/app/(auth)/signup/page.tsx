@@ -55,7 +55,7 @@ export default async function SignupPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
             NEXORA
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-ink">Account aanmaken</h1>

@@ -44,7 +44,7 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
 
       {isDemoMode() ? (
         <Card className="p-4">
-          <div className="mb-2 text-xs uppercase text-ink0">Demo persona</div>
+          <div className="mb-2 text-xs uppercase text-ink-muted">Demo persona</div>
           <PersonaSwitcher current={getDemoPersonaFromCookies() ?? "employee-0"} />
         </Card>
       ) : null}
@@ -195,7 +195,7 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
             </Button>
           </form>
         ) : (
-          <p className="text-sm text-ink0">
+          <p className="text-sm text-ink-muted">
             Geen actieve toegewezen projecten. Vraag je werkgever om toewijzing.
           </p>
         )}
@@ -210,14 +210,14 @@ export default async function EmployeeMobilePage({ searchParams }: PageProps) {
                 {assignedProjects.find((project) => project.id === entry.project_id)?.title ??
                   entry.project_id}
               </div>
-              <div className="text-ink0">
+              <div className="text-ink-muted">
                 {formatDateTime(entry.clock_in)}
                 {entry.clock_out !== null ? ` → ${formatDateTime(entry.clock_out)}` : " (open)"}
               </div>
             </div>
           ))}
           {recentEntries.length === 0 ? (
-            <div className="py-4 text-sm text-ink0">Nog geen uren.</div>
+            <div className="py-4 text-sm text-ink-muted">Nog geen uren.</div>
           ) : null}
         </div>
       </Card>

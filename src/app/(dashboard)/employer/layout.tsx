@@ -55,8 +55,8 @@ export default async function EmployerOnlyLayout({ children }: { children: React
       </div>
       {isDemoMode() ? (
         <div className="print:hidden rounded-lg border border-surface-border bg-surface/40 p-3">
-          <div className="mb-2 text-xs uppercase tracking-wide text-ink0">
-            Demo · wissel naar medewerker voor inklokken
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">
+            DEMO · wissel naar medewerker voor inklokken
           </div>
           <PersonaSwitcher current={getDemoPersonaFromCookies() ?? "employer"} />
         </div>

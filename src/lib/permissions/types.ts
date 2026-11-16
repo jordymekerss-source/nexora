@@ -21,6 +21,17 @@ export type DataScopeType =
 
 export type AccessLevel = "read" | "write" | "approve" | "manage" | "none";
 
+/** Temporary, audited Super Admin support access into one tenant. */
+export type SupportGrant = {
+  tenantId: string;
+  reason: string;
+  /** Module keys allowed, or ["*"] for all modules within the grant window. */
+  scopes: readonly string[];
+  startsAt: string;
+  endsAt: string;
+  revokedAt: string | null;
+};
+
 export type SessionPermissionContext = {
   userId: string;
   tenantId: string | null;
@@ -33,6 +44,8 @@ export type SessionPermissionContext = {
     scopeId: string | null;
     accessLevel: AccessLevel;
   }[];
+  /** Required for super_admin tenant-data access. Never implied. */
+  supportGrant: SupportGrant | null;
 };
 
 export const EMPTY_ACTION: ActionPermission = {
@@ -44,3 +57,9 @@ export const EMPTY_ACTION: ActionPermission = {
   canExport: false,
   canManage: false,
 };
+
+/** Modules that are platform-ops only — not customer tenant data. */
+export const PLATFORM_ADMIN_MODULES: ReadonlySet<string> = new Set([
+  "platform",
+  "integrations",
+]);

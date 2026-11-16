@@ -50,7 +50,7 @@ export default async function EmployerToolsPage({ searchParams }: PageProps) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="font-medium text-ink">{tool.name}</div>
-                    <div className="text-sm text-ink0">
+                    <div className="text-sm text-ink-muted">
                       {tool.serial_number ?? "geen serienr"} ·{" "}
                       {STATUS_LABEL[tool.status] ?? tool.status}
                     </div>
@@ -99,7 +99,7 @@ export default async function EmployerToolsPage({ searchParams }: PageProps) {
             ))}
           </div>
           {tools.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-ink0">Nog geen gereedschap.</div>
+            <div className="px-4 py-8 text-sm text-ink-muted">Nog geen gereedschap.</div>
           ) : null}
         </Card>
 

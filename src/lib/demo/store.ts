@@ -7,7 +7,9 @@ import {
   DEMO_TENANT_ID,
 } from "@/lib/demo/mode";
 import { nextInvoiceNumber, nextQuoteNumber } from "@/lib/billing-numbers";
+import { DEFAULT_ENABLED_MODULES } from "@/lib/entitlements/modules";
 import { computeVatTotals, lineTotal, roundMoney } from "@/lib/money";
+
 import type {
   AuditEventRow,
   BreakEntryRow,
@@ -234,11 +236,18 @@ function ymd(date: Date): string {
 
 export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boolean }> {
   const current = await readDemoStore();
+  const enabledModuleKeys = new Set(
+    current.moduleConfigs.filter((row) => row.enabled).map((row) => row.module_key),
+  );
+  const needsModuleSeed = [...DEFAULT_ENABLED_MODULES].some(
+    (key) => !enabledModuleKeys.has(key),
+  );
   const needsOpsSeed =
     current.assignments.length === 0 ||
     current.vehicles.length === 0 ||
     current.tools.length === 0 ||
-    current.certificates.length === 0;
+    current.certificates.length === 0 ||
+    needsModuleSeed;
   if (!force && current.clients.length > 0 && current.seededAt !== null && !needsOpsSeed) {
     return { seeded: false };
   }
@@ -678,32 +687,14 @@ export async function seedDemoStoreIfEmpty(force = false): Promise<{ seeded: boo
     timeEntryCorrections: [],
     auditEvents: [],
     projectPhotos: [],
-    moduleConfigs: [
-      {
-        id: randomUUID(),
-        tenant_id: DEMO_TENANT_ID,
-        module_key: "time",
-        enabled: true,
-        settings: {},
-        updated_at: createdAt,
-      },
-      {
-        id: randomUUID(),
-        tenant_id: DEMO_TENANT_ID,
-        module_key: "crm",
-        enabled: true,
-        settings: {},
-        updated_at: createdAt,
-      },
-      {
-        id: randomUUID(),
-        tenant_id: DEMO_TENANT_ID,
-        module_key: "fleet",
-        enabled: true,
-        settings: {},
-        updated_at: createdAt,
-      },
-    ],
+    moduleConfigs: [...DEFAULT_ENABLED_MODULES].map((moduleKey) => ({
+      id: randomUUID(),
+      tenant_id: DEMO_TENANT_ID,
+      module_key: moduleKey,
+      enabled: true,
+      settings: {},
+      updated_at: createdAt,
+    })),
     assignments,
     vehicles,
     tools,

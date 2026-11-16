@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   CalendarDays,
   FileText,
@@ -18,45 +18,24 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { buildNavForSession } from "@/lib/navigation/nav-config";
 import type { ProfileRole } from "@/types/database";
 
-type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
-
-function navForRole(role: ProfileRole): readonly NavItem[] {
-  const base: NavItem[] = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/dashboard/time", label: "Uren", icon: Timer },
-  ];
-
-  if (role === "employer") {
-    return [
-      ...base,
-      { href: "/employer/projects", label: "Projecten", icon: FolderKanban },
-      { href: "/employer/clients", label: "Klanten", icon: Users },
-      { href: "/employer/quotes", label: "Offertes", icon: FileText },
-      { href: "/employer/invoices", label: "Facturen", icon: Receipt },
-      { href: "/employer/planning", label: "Planning", icon: CalendarDays },
-      { href: "/employer/fleet", label: "Wagenpark", icon: Truck },
-      { href: "/employer/tools", label: "Gereedschap", icon: Wrench },
-      { href: "/employer/hr", label: "HR & Certificaten", icon: HardHat },
-      { href: "/dashboard/team", label: "Team", icon: Users },
-    ];
-  }
-
-  if (role === "super_admin") {
-    return [
-      ...base,
-      { href: "/dashboard/projects", label: "Projecten", icon: FolderKanban },
-      { href: "/dashboard/team", label: "Team", icon: Users },
-    ];
-  }
-
-  return [
-    ...base,
-    { href: "/employee", label: "Inklokken", icon: Timer },
-    { href: "/dashboard/projects", label: "Projecten", icon: FolderKanban },
-  ];
-}
+const ICONS: Record<string, typeof LayoutDashboard> = {
+  "/dashboard": LayoutDashboard,
+  "/dashboard/time": Timer,
+  "/employee": Timer,
+  "/employer/projects": FolderKanban,
+  "/dashboard/projects": FolderKanban,
+  "/employer/clients": Users,
+  "/employer/quotes": FileText,
+  "/employer/invoices": Receipt,
+  "/employer/planning": CalendarDays,
+  "/employer/fleet": Truck,
+  "/employer/tools": Wrench,
+  "/employer/hr": HardHat,
+  "/dashboard/team": Users,
+};
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") {
@@ -69,16 +48,22 @@ export function AppShell({
   role,
   userLabel,
   signOutSlot,
+  enabledModules,
   children,
 }: {
   role: ProfileRole;
   userLabel: string;
   signOutSlot: ReactNode;
+  /** Module keys currently enabled for the tenant. */
+  enabledModules?: readonly string[];
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const items = navForRole(role);
   const [open, setOpen] = useState(false);
+  const items = useMemo(() => {
+    const modules = new Set(enabledModules ?? []);
+    return buildNavForSession({ role, enabledModules: modules });
+  }, [role, enabledModules]);
 
   return (
     <div className="flex min-h-screen">
@@ -109,7 +94,7 @@ export function AppShell({
 
           <nav className="mt-8 flex flex-1 flex-col gap-1" aria-label="Hoofdnavigatie">
             {items.map((item) => {
-              const Icon = item.icon;
+              const Icon = ICONS[item.href] ?? LayoutDashboard;
               const active = isActive(pathname, item.href);
               return (
                 <Link

@@ -1,49 +1,43 @@
-# Session Handoff — Premium Full Build
+# Session Handoff — Ultimate Product V2
 
-## Repository
+## Repo
 
-| Item | Value |
-| --- | --- |
+| | |
+|---|---|
 | Worktree | `/root/nexora-app` |
-| Branch | `cursor/nexora-premium-full-build-5233` |
-| HEAD | `3414417` (tracker pin) / feature `956ed5a` |
-| Base | `cursor/nexora-audit-playwright-5233` @ `6a5804d` |
-| Remote | `git@github.com:jordymekerss-source/nexora.git` |
-| Draft PR | Open via https://github.com/jordymekerss-source/nexora/compare/cursor/nexora-audit-playwright-5233...cursor/nexora-premium-full-build-5233?expand=1&title=NEXORA%20premium%20full%20build (CLI `gh` had no auth token on this worker) |
-| NADS | Untouched (`/root/nexora-mvp` NADS branch left alone) |
+| Branch | `cursor/nexora-ultimate-product-v2-5233` |
+| Base | `c2d8acb` on premium-full-build |
+| Checkpoint tag | `checkpoint/ultimate-v2-start` |
+| NADS | not touched |
 
-## Demo
+## P0 delivered
 
-`http://178.104.173.127:3000` — `nexora-dev` tmux serves `/root/nexora-app` with `NEXT_PUBLIC_DEMO_MODE=true`.
+- Fail-closed data scopes (no generic employee read; null scope_id ≠ all)
+- Super Admin requires support grant for tenant data
+- Deterministic feature entitlement resolver (no expired default revive)
+- `authorize()` + wired into time create/edit
+- Strict time parsing (no silent invalid Date)
+- Migrations: support grants, scope integrity, atomic org RPC, search_path pins
+- Module-aware AppShell nav + full default module demo seed
+- CI workflow for `cursor/**`
+- Docs: ARCHITECTURE_V2, SECURITY_THREAT_MODEL, SCREEN_ACCEPTANCE_MATRIX, TEST_EVIDENCE
 
-## Done this session
+## Tests
 
-- Fail-closed entitlements (`resolveEnabledModules`)
-- Demo persona: invalid → null
-- Demo store: queued RMW + atomic rename; corrupt JSON throws
-- Time page shows employee names
-- Premium light theme + AppShell
-- Permissions scaffold + SQL migration/tests
-- Docs: tracker, UX, security gate, readiness, app store, handoff
-- Tests: typecheck ✓, lint ✓, unit 55/55 ✓, e2e 18/18 ✓
+```bash
+npm run typecheck  # pass
+npm run lint       # pass
+npm test           # 81 pass
+PLAYWRIGHT_PORT=3004 npm run test:e2e  # 18 pass (clear .next if webpack flake)
+```
 
-## Blockers (NOT READY)
+## Next
 
-1. Live Supabase RLS multi-tenant proof (no test DB)
-2. Full live ops outside demo for all core actions
-3. Offline sync implementation (docs only)
-4. Production object storage
-5. Permissions not yet enforced on every server action
-6. Draft PR not auto-created (missing `gh` token); use compare URL above
-
-## Next agent
-
-1. Create draft PR from compare URL (do not merge)
-2. Wire `resolveActionPermission` into critical actions
-3. When Supabase test project exists: run `supabase/tests/p0_security_regression.sql`
-4. Implement offline sync queue
-5. Continue Fase F–I modules without inventing green status
+1. Draft PR → `cursor/nexora-premium-full-build-5233` (or audit branch)
+2. Wire authorize into ops/crm_billing mutations
+3. Run SQL tests when Supabase test project exists
+4. Offline + Expo slices
 
 ## Forbidden
 
-Force-push, hard reset, NADS edits, prod deploy, App Store publish.
+NADS edits, force-push, deploy, App Store publish, merge without review.

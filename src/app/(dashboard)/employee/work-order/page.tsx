@@ -26,7 +26,7 @@ export default async function EmployeeWorkOrderPage({ searchParams }: PageProps)
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <div>
-        <Link href="/employee" className="text-sm text-ink0 hover:text-ink-muted">
+        <Link href="/employee" className="text-sm text-ink-muted hover:text-ink-muted">
           ← Terug
         </Link>
         <h1 className="mt-3 text-2xl font-semibold text-ink">Digitale werkbon</h1>

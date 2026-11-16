@@ -46,7 +46,7 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
                 vehicle.apk_expiry_date !== null ? daysUntil(vehicle.apk_expiry_date) : null;
               const apkTone =
                 days === null
-                  ? "text-ink0"
+                  ? "text-ink-muted"
                   : days < 0
                     ? "text-red-300"
                     : days <= 30
@@ -57,7 +57,7 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-medium text-ink">{vehicle.license_plate}</div>
-                      <div className="text-sm text-ink0">{vehicle.brand_model}</div>
+                      <div className="text-sm text-ink-muted">{vehicle.brand_model}</div>
                     </div>
                     <div className={`text-xs ${apkTone}`}>
                       {vehicle.apk_expiry_date !== null
@@ -107,7 +107,7 @@ export default async function EmployerFleetPage({ searchParams }: PageProps) {
             })}
           </div>
           {vehicles.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-ink0">Nog geen voertuigen.</div>
+            <div className="px-4 py-8 text-sm text-ink-muted">Nog geen voertuigen.</div>
           ) : null}
         </Card>
 

@@ -48,7 +48,7 @@ export default async function EmployerHrPage({ searchParams }: PageProps) {
                 <div key={certificate.id} className="flex items-start justify-between gap-3 px-4 py-4">
                   <div>
                     <div className="font-medium text-ink">{certificate.certificate_name}</div>
-                    <div className="text-sm text-ink0">{certificate.user_name}</div>
+                    <div className="text-sm text-ink-muted">{certificate.user_name}</div>
                     {certificate.document_url !== null ? (
                       <a
                         href={certificate.document_url}
@@ -69,7 +69,7 @@ export default async function EmployerHrPage({ searchParams }: PageProps) {
             })}
           </div>
           {certificates.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-ink0">Nog geen certificaten.</div>
+            <div className="px-4 py-8 text-sm text-ink-muted">Nog geen certificaten.</div>
           ) : null}
         </Card>
 

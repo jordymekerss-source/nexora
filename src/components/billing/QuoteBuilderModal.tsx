@@ -153,7 +153,7 @@ export function QuoteBuilderModal({ clients }: { clients: readonly ClientRow[] }
                     <div className="flex items-end justify-end pb-1">
                       <button
                         type="button"
-                        className="rounded-md p-2 text-ink0 hover:text-red-300"
+                        className="rounded-md p-2 text-ink-muted hover:text-red-300"
                         onClick={() =>
                           setLines((current) =>
                             current.length <= 1

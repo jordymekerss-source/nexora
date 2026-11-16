@@ -69,7 +69,7 @@ export default async function NewProjectPage() {
       <div>
         <Link
           href="/dashboard/projects"
-          className="text-sm text-ink0 hover:text-ink-muted"
+          className="text-sm text-ink-muted hover:text-ink-muted"
         >
           ← Back to projects
         </Link>

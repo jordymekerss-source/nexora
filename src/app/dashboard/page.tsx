@@ -31,19 +31,19 @@ export default async function DashboardHomePage() {
 
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="p-4">
-            <div className="text-xs uppercase text-ink0">Klanten</div>
+            <div className="text-xs uppercase text-ink-muted">Klanten</div>
             <div className="mt-2 text-2xl font-semibold">{store.clients.length}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs uppercase text-ink0">Offertes</div>
+            <div className="text-xs uppercase text-ink-muted">Offertes</div>
             <div className="mt-2 text-2xl font-semibold">{store.quotes.length}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs uppercase text-ink0">Openstaand</div>
+            <div className="text-xs uppercase text-ink-muted">Openstaand</div>
             <div className="mt-2 text-2xl font-semibold text-accent">{formatEuro(open)}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs uppercase text-ink0">Planning</div>
+            <div className="text-xs uppercase text-ink-muted">Planning</div>
             <div className="mt-2 text-2xl font-semibold">{store.schedules.length}</div>
           </Card>
         </div>
@@ -92,7 +92,7 @@ export default async function DashboardHomePage() {
         <Card>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-surface-border text-xs uppercase text-ink0">
+              <thead className="border-b border-surface-border text-xs uppercase text-ink-muted">
                 <tr>
                   <th className="py-2 pr-4">Name</th>
                   <th className="py-2">Id</th>
@@ -102,7 +102,7 @@ export default async function DashboardHomePage() {
                 {(tenants ?? []).map((tenant) => (
                   <tr key={tenant.id}>
                     <td className="py-3 pr-4">{tenant.name}</td>
-                    <td className="py-3 font-mono text-xs text-ink0">{tenant.id}</td>
+                    <td className="py-3 font-mono text-xs text-ink-muted">{tenant.id}</td>
                   </tr>
                 ))}
               </tbody>
@@ -136,7 +136,7 @@ export default async function DashboardHomePage() {
               className="flex items-center justify-between py-3 text-sm"
             >
               <span>{project.title}</span>
-              <span className="text-xs uppercase text-ink0">{project.status}</span>
+              <span className="text-xs uppercase text-ink-muted">{project.status}</span>
             </Link>
           ))}
         </div>

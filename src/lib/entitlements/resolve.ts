@@ -1,5 +1,6 @@
 import type { ModuleKey } from "@/lib/entitlements/modules";
 import { DEFAULT_ENABLED_MODULES, isModuleKey } from "@/lib/entitlements/modules";
+import type { TenantEntitlementConfigStatus } from "@/lib/entitlements/feature-resolve";
 
 export type ModuleConfigRowLike = {
   module_key: string;
@@ -9,24 +10,30 @@ export type ModuleConfigRowLike = {
 /**
  * Fail-closed module resolution.
  *
- * - No rows → uninitialized tenant → safe MVP defaults.
- * - Rows present (even all disabled) → honor explicit config; never re-open defaults.
- * - loadError → deny all optional access (empty set). Never escalate on failure.
+ * - uninitialized + no rows → safe MVP defaults.
+ * - configured (even with zero/all-disabled rows) → honor explicit config only.
+ * - error → empty set (never escalate).
  */
 export function resolveEnabledModules(input: {
   rows: readonly ModuleConfigRowLike[] | null;
   loadError?: boolean;
+  configStatus?: TenantEntitlementConfigStatus;
 }): ReadonlySet<ModuleKey> {
-  if (input.loadError === true) {
+  if (input.loadError === true || input.configStatus === "error") {
     return new Set<ModuleKey>();
   }
 
-  if (input.rows === null || input.rows.length === 0) {
+  const rows = input.rows ?? [];
+  const status =
+    input.configStatus ??
+    (rows.length === 0 ? "uninitialized" : "configured");
+
+  if (status === "uninitialized" && rows.length === 0) {
     return DEFAULT_ENABLED_MODULES;
   }
 
   const enabled = new Set<ModuleKey>();
-  for (const row of input.rows) {
+  for (const row of rows) {
     if (row.enabled && isModuleKey(row.module_key)) {
       enabled.add(row.module_key);
     }

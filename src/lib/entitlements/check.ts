@@ -1,12 +1,13 @@
 import { isDemoMode } from "@/lib/demo/mode";
 import { readDemoStore, seedDemoStoreIfEmpty } from "@/lib/demo/store";
 import {
-  DEFAULT_ENABLED_FEATURES,
-  isFeatureKey,
-  type FeatureKey,
-} from "@/lib/entitlements/features";
+  deriveConfigStatus,
+  resolveEnabledFeatures,
+  type TenantEntitlementConfigStatus,
+} from "@/lib/entitlements/feature-resolve";
+import type { FeatureKey } from "@/lib/entitlements/features";
 import { resolveEnabledModules } from "@/lib/entitlements/resolve";
-import { isModuleKey, type ModuleKey } from "@/lib/entitlements/modules";
+import type { ModuleKey } from "@/lib/entitlements/modules";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export class EntitlementDeniedError extends Error {
@@ -29,12 +30,29 @@ export class FeatureDeniedError extends Error {
   }
 }
 
+async function demoConfigStatus(tenantId: string): Promise<{
+  status: TenantEntitlementConfigStatus;
+  rows: { module_key: string; enabled: boolean }[];
+}> {
+  await seedDemoStoreIfEmpty(false);
+  const store = await readDemoStore();
+  const rows = store.moduleConfigs.filter((row) => row.tenant_id === tenantId);
+  const initialized =
+    (store as { entitlementsInitialized?: boolean }).entitlementsInitialized === true ||
+    rows.length > 0;
+  return {
+    status: deriveConfigStatus({
+      entitlementsInitialized: initialized,
+      rowCount: rows.length,
+    }),
+    rows,
+  };
+}
+
 export async function listEnabledModules(tenantId: string): Promise<ReadonlySet<ModuleKey>> {
   if (isDemoMode()) {
-    await seedDemoStoreIfEmpty(false);
-    const store = await readDemoStore();
-    const rows = store.moduleConfigs.filter((row) => row.tenant_id === tenantId);
-    return resolveEnabledModules({ rows });
+    const { status, rows } = await demoConfigStatus(tenantId);
+    return resolveEnabledModules({ rows, configStatus: status });
   }
 
   const supabase = createSupabaseServerClient();
@@ -44,10 +62,14 @@ export async function listEnabledModules(tenantId: string): Promise<ReadonlySet<
     .eq("tenant_id", tenantId);
 
   if (error !== null) {
-    return resolveEnabledModules({ rows: null, loadError: true });
+    return resolveEnabledModules({ rows: null, loadError: true, configStatus: "error" });
   }
 
-  return resolveEnabledModules({ rows: data ?? [] });
+  // Column entitlements_initialized is added by migration 20251116230000.
+  // Until generated DB types include it, derive from row presence (configured if any rows).
+  const rows = data ?? [];
+  const status = deriveConfigStatus({ rowCount: rows.length });
+  return resolveEnabledModules({ rows, configStatus: status });
 }
 
 export async function assertModuleEnabled(
@@ -61,8 +83,15 @@ export async function assertModuleEnabled(
 }
 
 export async function listEnabledFeatures(tenantId: string): Promise<ReadonlySet<FeatureKey>> {
+  const modules = await listEnabledModules(tenantId);
+
   if (isDemoMode()) {
-    return DEFAULT_ENABLED_FEATURES;
+    // Demo has no feature_entitlements rows yet → uninitialized feature config.
+    return resolveEnabledFeatures({
+      rows: [],
+      enabledModules: modules,
+      configStatus: "uninitialized",
+    });
   }
 
   const supabase = createSupabaseServerClient();
@@ -72,38 +101,21 @@ export async function listEnabledFeatures(tenantId: string): Promise<ReadonlySet
     .eq("tenant_id", tenantId);
 
   if (error !== null) {
-    // Fail closed on feature load errors.
-    return new Set<FeatureKey>();
+    return resolveEnabledFeatures({
+      rows: null,
+      enabledModules: modules,
+      configStatus: "error",
+    });
   }
 
-  if (data === null || data.length === 0) {
-    return DEFAULT_ENABLED_FEATURES;
-  }
+  const rows = data ?? [];
+  const status = deriveConfigStatus({ rowCount: rows.length });
 
-  const now = Date.now();
-  const enabled = new Set<FeatureKey>();
-  const explicitlyDisabled = new Set<string>();
-
-  for (const row of data) {
-    if (!isFeatureKey(row.feature_key)) {
-      continue;
-    }
-    if (!row.enabled) {
-      explicitlyDisabled.add(row.feature_key);
-      continue;
-    }
-    if (row.expires_at !== null && Date.parse(row.expires_at) < now) {
-      continue;
-    }
-    enabled.add(row.feature_key);
-  }
-
-  for (const key of DEFAULT_ENABLED_FEATURES) {
-    if (!explicitlyDisabled.has(key)) {
-      enabled.add(key);
-    }
-  }
-  return enabled;
+  return resolveEnabledFeatures({
+    rows,
+    enabledModules: modules,
+    configStatus: status,
+  });
 }
 
 export async function assertFeatureEnabled(

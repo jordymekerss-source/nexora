@@ -31,7 +31,7 @@ export default async function NeedTenantPage() {
             </button>
           </form>
         </div>
-        <div className="mt-4 text-sm text-ink0">
+        <div className="mt-4 text-sm text-ink-muted">
           Wrong account?{" "}
           <Link className="text-accent hover:text-emerald-300" href="/login">
             Sign in with a different email

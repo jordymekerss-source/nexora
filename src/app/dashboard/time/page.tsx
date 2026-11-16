@@ -48,7 +48,7 @@ export default async function TimeEntriesPage() {
                   <span className="mx-2 text-zinc-600">·</span>
                   {projectTitle}
                 </div>
-                <div className="text-ink0">
+                <div className="text-ink-muted">
                   {entry.status} · pauze {entry.break_minutes}m ·{" "}
                   {formatDateTime(entry.clock_in)}
                   {entry.clock_out !== null ? ` → ${formatDateTime(entry.clock_out)}` : " (open)"}
@@ -170,7 +170,7 @@ export default async function TimeEntriesPage() {
 
       <Card>
         <h2 className="text-lg font-semibold text-ink">Log time</h2>
-        <p className="mt-1 text-sm text-ink0">
+        <p className="mt-1 text-sm text-ink-muted">
           Use your local timezone; values are stored as UTC timestamps.
         </p>
 
@@ -198,7 +198,7 @@ export default async function TimeEntriesPage() {
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink-muted">
               <tr>
                 {role === "employer" ? <th className="px-4 py-3">Person</th> : null}
                 <th className="px-4 py-3">Project</th>
@@ -307,7 +307,7 @@ export default async function TimeEntriesPage() {
           </table>
         </div>
         {(entries ?? []).length === 0 ? (
-          <div className="px-4 py-8 text-sm text-ink0">No time entries yet.</div>
+          <div className="px-4 py-8 text-sm text-ink-muted">No time entries yet.</div>
         ) : null}
       </Card>
     </div>

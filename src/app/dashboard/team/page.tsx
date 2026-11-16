@@ -28,7 +28,7 @@ export default async function TeamPage({ searchParams }: PageProps) {
               <div key={profile.id} className="flex items-center justify-between px-4 py-3 text-sm">
                 <div>
                   <div className="font-medium text-ink">{profile.full_name}</div>
-                  <div className="text-ink0">{profile.role}</div>
+                  <div className="text-ink-muted">{profile.role}</div>
                 </div>
               </div>
             ))}
@@ -114,7 +114,7 @@ export default async function TeamPage({ searchParams }: PageProps) {
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border bg-surface/40 text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Role</th>
@@ -128,14 +128,14 @@ export default async function TeamPage({ searchParams }: PageProps) {
                   <td className="px-4 py-3 font-medium text-ink">{member.full_name}</td>
                   <td className="px-4 py-3 capitalize text-ink-muted">{member.role.replace("_", " ")}</td>
                   <td className="px-4 py-3 text-ink-muted">{member.phone ?? "—"}</td>
-                  <td className="px-4 py-3 text-ink0">{formatDateTime(member.created_at)}</td>
+                  <td className="px-4 py-3 text-ink-muted">{formatDateTime(member.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         {(members ?? []).length === 0 ? (
-          <div className="px-4 py-8 text-sm text-ink0">No team members yet.</div>
+          <div className="px-4 py-8 text-sm text-ink-muted">No team members yet.</div>
         ) : null}
       </Card>
     </div>

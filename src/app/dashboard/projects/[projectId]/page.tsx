@@ -89,7 +89,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/dashboard/projects" className="text-sm text-ink0 hover:text-ink-muted">
+        <Link href="/dashboard/projects" className="text-sm text-ink-muted hover:text-ink-muted">
           ← Projects
         </Link>
         <h1 className="mt-4 text-2xl font-semibold text-ink">{typedProject.title}</h1>
@@ -109,7 +109,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       {canManage ? (
         <Card>
           <h2 className="text-lg font-semibold text-ink">Edit project</h2>
-          <p className="mt-1 text-sm text-ink0">Changes apply immediately for your tenant.</p>
+          <p className="mt-1 text-sm text-ink-muted">Changes apply immediately for your tenant.</p>
 
           <form action={updateProjectBound} className="mt-4 space-y-4">
             <Input name="title" label="Title" required defaultValue={typedProject.title} />
@@ -136,7 +136,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
       <Card>
         <h2 className="text-lg font-semibold text-ink">Photos</h2>
-        <p className="mt-1 text-sm text-ink0">
+        <p className="mt-1 text-sm text-ink-muted">
           {canUploadPhotos
             ? "Uploads are private objects; gallery uses short-lived signed URLs."
             : "Photo uploads are available to employees and employers."}
@@ -152,7 +152,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
       <Card>
         <h2 className="text-lg font-semibold text-ink">Time entries</h2>
-        <p className="mt-1 text-sm text-ink0">
+        <p className="mt-1 text-sm text-ink-muted">
           {canManage
             ? "Approve entries once payroll is reviewed."
             : "You can edit pending entries until they are approved."}
@@ -160,7 +160,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border text-xs uppercase text-ink-muted">
               <tr>
                 <th className="py-2 pr-4">Person</th>
                 <th className="py-2 pr-4">Clock in</th>
@@ -218,7 +218,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             </tbody>
           </table>
           {(timeEntries ?? []).length === 0 ? (
-            <div className="py-6 text-sm text-ink0">No time logged for this job yet.</div>
+            <div className="py-6 text-sm text-ink-muted">No time logged for this job yet.</div>
           ) : null}
         </div>
       </Card>

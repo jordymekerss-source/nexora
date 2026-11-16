@@ -67,7 +67,7 @@ export default async function EmployerClientsPage({ searchParams }: PageProps) {
 
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-surface-border text-xs uppercase text-ink0">
+            <thead className="border-b border-surface-border text-xs uppercase text-ink-muted">
               <tr>
                 <th className="px-2 py-3">Bedrijf</th>
                 <th className="px-2 py-3">Contact</th>
@@ -85,14 +85,14 @@ export default async function EmployerClientsPage({ searchParams }: PageProps) {
                   <td className="px-2 py-3">{client.email}</td>
                   <td className="px-2 py-3">{client.phone ?? "—"}</td>
                   <td className="px-2 py-3">{client.address}</td>
-                  <td className="px-2 py-3 text-ink0">{formatDateTime(client.created_at)}</td>
+                  <td className="px-2 py-3 text-ink-muted">{formatDateTime(client.created_at)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         {filtered.length === 0 ? (
-          <div className="py-8 text-sm text-ink0">Geen klanten gevonden.</div>
+          <div className="py-8 text-sm text-ink-muted">Geen klanten gevonden.</div>
         ) : null}
       </Card>
     </div>

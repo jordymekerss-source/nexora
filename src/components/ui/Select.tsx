@@ -26,7 +26,7 @@ export function Select({ id, label, options, hint, className = "", ...rest }: Se
         ))}
       </select>
       {hint !== undefined && hint.length > 0 ? (
-        <span className="text-xs text-ink0">{hint}</span>
+        <span className="text-xs text-ink-muted">{hint}</span>
       ) : null}
     </label>
   );

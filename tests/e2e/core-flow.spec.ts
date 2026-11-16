@@ -43,9 +43,9 @@ test.describe("NEXORA core flow (employee → employer)", () => {
     });
     await expect(worker).toBeVisible();
 
-    const uploadedPhoto = page.locator(
-      `[data-testid="project-photo"][data-photo-user="${DEMO_EMPLOYEE.displayName}"]`,
-    );
+    const uploadedPhoto = page
+      .locator(`[data-testid="project-photo"][data-photo-user="${DEMO_EMPLOYEE.displayName}"]`)
+      .first();
     await expect(uploadedPhoto).toBeVisible();
     await expect(uploadedPhoto.locator("img")).toBeVisible();
   });

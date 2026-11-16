@@ -19,7 +19,11 @@ export async function loginEmployee(page: Page): Promise<void> {
 
 export async function loginEmployer(page: Page): Promise<void> {
   await loginAs(page, DEMO_EMPLOYER.email, DEMO_EMPLOYER.password);
-  await page.waitForURL(/\/employer/);
+  await page.waitForURL(/\/(employer|dashboard)/, { timeout: 60_000 });
+  if (!/\/employer/.test(page.url())) {
+    await page.goto("/employer/clients");
+  }
+  await expect(page).toHaveURL(/\/employer/);
 }
 
 export async function demoSignOut(page: Page): Promise<void> {

@@ -2,14 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/require-user";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { isNonEmptyString } from "@/lib/validation";
+import { randomUUID } from "crypto";
 
 /**
- * Organization creation is the only public path that elevates a null-tenant
- * user to employer. Privilege never comes from signup metadata.
+ * Organization creation elevates a null-tenant user to employer.
+ * Prefer atomic RPC; fall back to compensated admin path if RPC unavailable.
  */
 export default async function CreateOrganizationPage() {
   const session = await requireSession();
@@ -45,8 +47,27 @@ export default async function CreateOrganizationPage() {
       redirect("/onboarding/create-organization?error=name");
     }
 
-    const admin = getSupabaseAdminClient();
+    const idempotencyKey = randomUUID();
+    const supabase = createSupabaseServerClient();
+    // RPC added in migration 20251116231000; not yet in generated Database types.
+    const { data: rpcTenantId, error: rpcError } = await (
+      supabase as unknown as {
+        rpc: (
+          fn: string,
+          args: Record<string, unknown>,
+        ) => Promise<{ data: unknown; error: { message: string } | null }>;
+      }
+    ).rpc("create_organization_for_caller", {
+      p_organization_name: organizationName.trim(),
+      p_idempotency_key: idempotencyKey,
+    });
 
+    if (rpcError === null && typeof rpcTenantId === "string" && rpcTenantId.length > 0) {
+      redirect("/dashboard");
+    }
+
+    // Fallback for environments where the V2 migration is not applied yet.
+    const admin = getSupabaseAdminClient();
     const { data: tenant, error: tenantError } = await admin
       .from("tenants")
       .insert({ name: organizationName.trim() })
@@ -74,7 +95,7 @@ export default async function CreateOrganizationPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-16">
       <Card>
-        <h1 className="text-xl font-semibold text-ink">Organisatie aanmaken</h1>
+        <h1 className="font-display text-2xl font-semibold text-ink">Organisatie aanmaken</h1>
         <p className="mt-2 text-sm text-ink-muted">
           Dit maakt je bedrijfstenant aan en wijst je veilig de werkgeverrol toe. Dit is geen
           metadata van de registratiepagina.
@@ -87,9 +108,9 @@ export default async function CreateOrganizationPage() {
           </Button>
         </form>
 
-        <div className="mt-6 text-sm text-ink0">
+        <div className="mt-6 text-sm text-ink-muted">
           Uitloggen?{" "}
-          <Link className="text-accent hover:text-emerald-300" href="/login">
+          <Link className="text-accent hover:underline" href="/login">
             Terug naar inloggen
           </Link>
         </div>

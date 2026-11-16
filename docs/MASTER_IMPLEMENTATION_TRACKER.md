@@ -1,40 +1,28 @@
-# NEXORA Master Implementation Tracker
+# NEXORA Master Implementation Tracker — Ultimate Product V2
 
-Branch: `cursor/nexora-premium-full-build`  
-Base tip (audit): `6a5804d42221d82aafc9782a3b88b053cc417a21`  
+Branch: `cursor/nexora-ultimate-product-v2-5233`  
+Base: `cursor/nexora-premium-full-build-5233` @ `c2d8acb`  
 Laatste update: 2026-11-16 (Europe/Amsterdam)
 
-Statuswaarden: `NOT_STARTED` | `IN_PROGRESS` | `IMPLEMENTED_UNVERIFIED` | `VERIFIED` | `BLOCKED`
-
-| ID | Prio | Module | Beschrijving | Bestanden | Afhankelijkheden | Status | Testresultaat | Commit |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A-01 | P0 | Audit | Requirementsmatrix + tracker | `docs/MASTER_IMPLEMENTATION_TRACKER.md` | — | VERIFIED | Docs aanwezig | 956ed5a |
-| B-01 | P0 | Security | Module entitlements fail-closed | `src/lib/entitlements/resolve.ts`, `check.ts` | — | VERIFIED | unit 55/55 | 956ed5a |
-| B-02 | P0 | Security | Fine-grained permissions model | `src/lib/permissions/*`, migratie `20251111220000_*` | B-01 | IMPLEMENTED_UNVERIFIED | unit evaluate OK; actions partial | 956ed5a |
-| B-03 | P0 | Auth | Ongeldige demo-persona ≠ employer | `src/lib/demo/persona.ts` | — | VERIFIED | persona unit + e2e auth | 956ed5a |
-| B-04 | P0 | RLS | Cross-tenant isolation proof | `supabase/tests/p0_security_regression.sql` | Live Supabase | BLOCKED | Geen testdb | — |
-| C-01 | P0 | Demo | Geserialiseerde atomische demo-store | `src/lib/demo/store.ts` | — | IMPLEMENTED_UNVERIFIED | e2e indirect | 956ed5a |
-| C-02 | P0 | Finance | Integer-cents / btw / nummers | `src/lib/money.ts`, migratie numbering | — | VERIFIED | money unit | 956ed5a |
-| D-01 | P1 | Live | Ops actions buiten demo | `src/app/actions/ops.ts` | Supabase | BLOCKED | Geen live project | — |
-| E-01 | P1 | UX | Design tokens + light theme | `globals.css`, `tailwind.config.ts` | — | IMPLEMENTED_UNVERIFIED | e2e pages laden | 956ed5a |
-| E-02 | P1 | UX | AppShell navigatie redesign | `src/components/app/AppShell.tsx` | E-01 | VERIFIED | e2e 18/18 | 956ed5a |
-| F-01 | P1 | UI | Kernschermen light-theme sweep | `src/app/**` | E-01 | IMPLEMENTED_UNVERIFIED | e2e CRM OK | 956ed5a |
-| H-01 | P1 | Offline | Sync-architectuur | `docs/OFFLINE_SYNC_ARCHITECTURE.md` | — | IMPLEMENTED_UNVERIFIED | docs only | 956ed5a |
-| I-01 | P2 | Mobile | Universele app voorbereiding | `docs/UNIVERSAL_MOBILE_ARCHITECTURE.md` | — | IMPLEMENTED_UNVERIFIED | docs only | 956ed5a |
-| J-01 | P0 | QA | Playwright core + security suites | `tests/e2e/*` | demo mode | VERIFIED | e2e 18/18 | 956ed5a |
-| K-01 | P0 | Docs | Production readiness / security gate | `docs/PRODUCTION_READINESS.md` e.a. | J-01 | VERIFIED | Docs | 956ed5a |
-
-## Requirementsmatrix (kern)
-
-| Req | Rol | Doel | Implementatie | DB | Authz | Status | Risico |
+| ID | Prio | Module | Beschrijving | Bestanden | Status | Testbewijs | Commit |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| R-AUTH-01 | allen | Veilige sessie | Supabase Auth + demo cookie isolatie | auth | middleware | gedeeltelijk | Hoog zonder live proof |
-| R-ENT-01 | employer | Modules aan/uit | `module_configs` + fail-closed resolve | module_configs | assertModuleEnabled | werkend (code) | Was open; nu dicht |
-| R-PERM-01 | employer | Fine-grained acts | permissions evaluate + migratie | role_permissions | deny-default | gedeeltelijk | Wire alle actions |
-| R-TIME-01 | employee | In/uit/pauze | demo ops + employee UI | time_entries | employee session | demo werkend | Live BLOCKED |
-| R-BILL-01 | employer | Facturen/offertes | crm_billing + money helpers | invoices/quotes | employer | demo werkend | Live BLOCKED |
-| R-CRM-01 | employer | Klanten | employer/clients | clients | employer | demo werkend | — |
-| R-PLAN-01 | employer | Planning | employer/planning | schedules | employer | gedeeltelijk | DnD/conflicts later |
-| R-OFF-01 | employee | Offline sync | architectuurdoc | — | — | ontbrekend code | Hoog |
-| R-STOR-01 | allen | Object storage | demo data-URL; live scaffold | storage | tenant path | gedeeltelijk | Productie ongeschikt |
-| R-MOB-01 | allen | Universele app | PWA/docs | — | role/modules | voorbereid | Store niet publiceren |
+| V2-P0-01 | P0 | AuthZ | hasDataAccess deny-by-default; geen project-B via A | `permissions/evaluate.ts` | VERIFIED | unit | TBD |
+| V2-P0-02 | P0 | AuthZ | Super Admin geen tenant-data zonder support grant | `evaluate.ts`, migratie support grants | VERIFIED | unit | TBD |
+| V2-P0-03 | P0 | Entitlements | Feature expiry + geen default-revive | `feature-resolve.ts` | VERIFIED | unit | TBD |
+| V2-P0-04 | P0 | AuthZ | Centrale `authorize()` | `authorization/authorize.ts` | VERIFIED | unit; wired time actions | TBD |
+| V2-P0-05 | P0 | Time | Strikte datetime/break validatie | `time/parse.ts`, `time/actions.ts` | VERIFIED | unit | TBD |
+| V2-P0-06 | P0 | DB | Scope NULL integrity + numbering grant | `20251116230000_*.sql` | IMPLEMENTED_UNVERIFIED | SQL niet gedraaid | TBD |
+| V2-P0-07 | P0 | Onboarding | Atomic create_organization RPC | `20251116231000_*.sql`, page | IMPLEMENTED_UNVERIFIED | geen live DB | TBD |
+| V2-NAV-01 | P1 | UX | Module-aware navigatie | `nav-config.ts`, AppShell | VERIFIED | unit + e2e | TBD |
+| V2-CI-01 | P1 | QA | CI op cursor/** branches | `.github/workflows/ci.yml` | IMPLEMENTED_UNVERIFIED | lokale e2e 18/18 | TBD |
+| V2-RLS-01 | P0 | Security | Live multi-tenant RLS | supabase tests | BLOCKED | geen testdb | — |
+| V2-OFF-01 | P1 | Offline | Sync implementatie | docs | NOT_STARTED | — | — |
+| V2-MOB-01 | P2 | Mobile | Expo shell | docs | NOT_STARTED | — | — |
+
+## Test summary (local)
+
+- typecheck ✓
+- lint ✓
+- unit 81/81 ✓
+- e2e 18/18 ✓
+- postgres integration: BLOCKED

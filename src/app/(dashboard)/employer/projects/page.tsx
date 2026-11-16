@@ -24,7 +24,7 @@ export default async function EmployerProjectsPage() {
             >
               <div>
                 <div className="font-medium text-ink">{project.title}</div>
-                <div className="text-ink0">{project.client_name ?? "—"}</div>
+                <div className="text-ink-muted">{project.client_name ?? "—"}</div>
               </div>
               <span className="rounded-full border border-surface-border px-2 py-0.5 text-xs uppercase text-ink-muted">
                 {project.status}
@@ -33,7 +33,7 @@ export default async function EmployerProjectsPage() {
           ))}
         </div>
         {projects.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-ink0">Nog geen projecten.</div>
+          <div className="px-4 py-8 text-sm text-ink-muted">Nog geen projecten.</div>
         ) : null}
       </Card>
     </div>

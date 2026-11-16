@@ -51,13 +51,13 @@ export default async function InvoicePrintPage({ params }: PageProps) {
 
         <div className="grid gap-8 px-10 py-8 sm:grid-cols-2">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
               Factuur aan
             </div>
             <div className="mt-2 text-lg font-semibold">{invoice.client_name}</div>
           </div>
           <div className="sm:text-right">
-            <div className="text-xs font-semibold uppercase tracking-wide text-ink0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
               Vervaldatum
             </div>
             <div className="mt-2 text-base font-medium">{invoice.due_date}</div>
@@ -68,7 +68,7 @@ export default async function InvoicePrintPage({ params }: PageProps) {
         <div className="px-10 pb-10">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-ink0">
+              <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-ink-muted">
                 <th className="py-2 pr-3">Omschrijving</th>
                 <th className="py-2 pr-3 text-right">Aantal</th>
                 <th className="py-2 pr-3 text-right">Prijs</th>
@@ -104,7 +104,7 @@ export default async function InvoicePrintPage({ params }: PageProps) {
             </div>
           </div>
 
-          <div className="mt-12 border-t border-zinc-200 pt-4 text-xs text-ink0">
+          <div className="mt-12 border-t border-zinc-200 pt-4 text-xs text-ink-muted">
             Printklaar NEXORA-document · Geschikt voor PDF-export via de browser.
           </div>
         </div>
