@@ -1,33 +1,49 @@
 # Session Handoff — Premium Full Build
 
-## Werkmap
+## Repository
 
-`/root/nexora-app` (git worktree)  
-Branch: `cursor/nexora-premium-full-build`  
-NADS niet aanwezig in deze tree — **niet** wijzigen in `/root/nexora-mvp/nads`.
+| Item | Value |
+| --- | --- |
+| Worktree | `/root/nexora-app` |
+| Branch | `cursor/nexora-premium-full-build-5233` |
+| HEAD | `3414417` (tracker pin) / feature `956ed5a` |
+| Base | `cursor/nexora-audit-playwright-5233` @ `6a5804d` |
+| Remote | `git@github.com:jordymekerss-source/nexora.git` |
+| Draft PR | Open via https://github.com/jordymekerss-source/nexora/compare/cursor/nexora-audit-playwright-5233...cursor/nexora-premium-full-build-5233?expand=1&title=NEXORA%20premium%20full%20build (CLI `gh` had no auth token on this worker) |
+| NADS | Untouched (`/root/nexora-mvp` NADS branch left alone) |
 
-## Basis
+## Demo
 
-Gebaseerd op `cursor/nexora-audit-playwright-5233` @ `6a5804d`.
+`http://178.104.173.127:3000` — `nexora-dev` tmux serves `/root/nexora-app` with `NEXT_PUBLIC_DEMO_MODE=true`.
 
-## Afgerond in deze sessie
+## Done this session
 
-- P0 entitlements fail-closed (`resolveEnabledModules`)
-- Demo persona: invalid → null (geen employer-escalatie)
-- Demo store: geserialiseerde mutaties + atomic write + corrupt-fail
-- Time page toont medewerkernamen
-- Premium light design tokens + AppShell redesign
-- Tracker + security/UX/readiness docs
-- Extra e2e suites + Playwright fixes (Facturatie heading)
+- Fail-closed entitlements (`resolveEnabledModules`)
+- Demo persona: invalid → null
+- Demo store: queued RMW + atomic rename; corrupt JSON throws
+- Time page shows employee names
+- Premium light theme + AppShell
+- Permissions scaffold + SQL migration/tests
+- Docs: tracker, UX, security gate, readiness, app store, handoff
+- Tests: typecheck ✓, lint ✓, unit 55/55 ✓, e2e 18/18 ✓
 
-## Volgende stappen
+## Blockers (NOT READY)
 
-1. Unit + Playwright draaien; flaky tests fixen
-2. Permissions hooks in alle kritische server actions
-3. Live Supabase adapters wanneer project beschikbaar
-4. Offline sync implementatie
-5. Draft PR naar audit/develop branch; geen merge/deploy
+1. Live Supabase RLS multi-tenant proof (no test DB)
+2. Full live ops outside demo for all core actions
+3. Offline sync implementation (docs only)
+4. Production object storage
+5. Permissions not yet enforced on every server action
+6. Draft PR not auto-created (missing `gh` token); use compare URL above
 
-## Verboden
+## Next agent
 
-Force-push, hard reset, NADS-wijzigingen, productie-deploy, App Store publish.
+1. Create draft PR from compare URL (do not merge)
+2. Wire `resolveActionPermission` into critical actions
+3. When Supabase test project exists: run `supabase/tests/p0_security_regression.sql`
+4. Implement offline sync queue
+5. Continue Fase F–I modules without inventing green status
+
+## Forbidden
+
+Force-push, hard reset, NADS edits, prod deploy, App Store publish.
